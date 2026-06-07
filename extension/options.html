@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAS App Builder - Settings</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #f1f5f9;
+      padding: 40px 20px;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 560px;
+      width: 100%;
+    }
+
+    h1 {
+      font-size: 28px;
+      margin-bottom: 4px;
+      color: #f59e0b;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      font-size: 16px;
+      margin-bottom: 16px;
+      color: #f1f5f9;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input[type="text"], input[type="url"] {
+      width: 100%;
+      padding: 10px 14px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #f1f5f9;
+      font-size: 14px;
+      outline: none;
+      transition: border 0.2s;
+      margin-bottom: 12px;
+    }
+
+    input:focus {
+      border-color: #f59e0b;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: #f59e0b;
+      color: #020617;
+    }
+
+    .btn-primary:hover {
+      background: #d97706;
+    }
+
+    .btn-secondary {
+      background: #334155;
+      color: #f1f5f9;
+    }
+
+    .btn-secondary:hover {
+      background: #475569;
+    }
+
+    .btn-success {
+      background: #22c55e;
+      color: #020617;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      margin-top: 4px;
+    }
+
+    .status-msg {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+
+    .status-msg.success {
+      background: rgba(34, 197, 94, 0.1);
+      border: 1px solid #22c55e;
+      color: #22c55e;
+    }
+
+    .status-msg.error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid #ef4444;
+      color: #ef4444;
+    }
+
+    .status-msg.info {
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid #3b82f6;
+      color: #3b82f6;
+    }
+
+    .status-msg.loading {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid #f59e0b;
+      color: #f59e0b;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #94a3b8;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .step {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 12px;
+      background: #0f172a;
+      border-radius: 8px;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      background: #f59e0b;
+      color: #020617;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .step-content {
+      flex: 1;
+    }
+
+    .step-title {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .step-desc {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    code {
+      background: #0f172a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #f59e0b;
+    }
+
+    .footer-note {
+      text-align: center;
+      color: #475569;
+      font-size: 12px;
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚡ GAS App Builder</h1>
+    <p class="subtitle">Google Apps Script + Google Sheets — App Builder Extension</p>
+
+    <!-- Step by Step Guide -->
+    <div class="card">
+      <div class="section-title">📖 Panduan Setup</div>
+      
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">Buka Google Sheets & Apps Script</div>
+          <div class="step-desc">
+            Buka spreadsheet → <code>Extensions</code> → <code>Apps Script</code><br>
+            Hapus kode default, paste kode dari file <code>Code.gs</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">Deploy Web App</div>
+          <div class="step-desc">
+            Klik <code>Deploy</code> → <code>New deployment</code><br>
+            Pilih type: <code>Web app</code><br>
+            Execute as: <code>Me</code><br>
+            Who has access: <code>Anyone</code><br>
+            Klik <code>Deploy</code> → izinkan akses
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">Copy URL & Paste di Bawah</div>
+          <div class="step-desc">
+            Copy URL Web App (https://script.google.com/.../exec)<br>
+            Paste di input di bawah → klik <strong>Simpan & Tes</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- URL Configuration -->
+    <div class="card">
+      <h2>🔗 Konfigurasi Web App URL</h2>
+      <label>Google Apps Script Web App URL</label>
+      <input type="url" id="webAppUrl" placeholder="https://script.google.com/macros/s/.../exec" />
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnSave">💾 Simpan & Tes</button>
+        <button class="btn btn-secondary" id="btnTest">🔄 Test Koneksi</button>
+      </div>
+      <div id="statusMessage"></div>
+    </div>
+
+    <!-- Info -->
+    <div class="card">
+      <h2>📋 API Endpoints</h2>
+      <div style="font-size:12px;color:#94a3b8;line-height:1.8;">
+        <code>GET ?action=getAll&sheet=NamaSheet</code> → Semua data<br>
+        <code>GET ?action=getRow&sheet=NamaSheet&id=1</code> → Satu baris<br>
+        <code>POST {action:"addRow", sheet:"...", data:{...}}</code> → Tambah data<br>
+        <code>POST {action:"updateRow", ...}</code> → Update data<br>
+        <code>POST {action:"deleteRow", ...}</code> → Hapus data<br>
+        <code>GET ?action=listSheets</code> → Daftar sheet<br>
+        <code>GET ?action=stats&sheet=NamaSheet</code> → Statistik
+      </div>
+    </div>
+
+    <div class="footer-note">
+      Dibuat oleh @andrikproject 🚀
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const urlInput = document.getElementById('webAppUrl');
+      const statusMsg = document.getElementById('statusMessage');
+      const btnSave = document.getElementById('btnSave');
+      const btnTest = document.getElementById('btnTest');
+
+      // Load saved URL
+      chrome.storage.local.get(['gasWebAppUrl'], (data) => {
+        if (data.gasWebAppUrl) {
+          urlInput.value = data.gasWebAppUrl;
+        }
+      });
+
+      async function testConnection(url) {
+        statusMsg.className = 'status-msg loading';
+        statusMsg.textContent = '⏳ Menghubungkan...';
+
+        try {
+          const response = await fetch(`${url.replace(/\/+$/, '')}?action=info`, {
+            method: 'GET'
+          });
+          const text = await response.text();
+          const data = JSON.parse(text);
+          
+          statusMsg.className = 'status-msg success';
+          statusMsg.textContent = `✅ Terhubung! Spreadsheet: ${data.name || 'Google Sheets'} (${data.sheets?.length || 0} sheet)`;
+          return true;
+        } catch(err) {
+          statusMsg.className = 'status-msg error';
+          statusMsg.textContent = `❌ Gagal: ${err.message}. Pastikan Web App sudah di-deploy dengan akses "Anyone".`;
+          return false;
+        }
+      }
+
+      btnSave.addEventListener('click', async () => {
+        const url = urlInput.value.trim();
+        if (!url || !url.startsWith('https://script.google.com')) {
+          statusMsg.className = 'status-msg error';
+          statusMsg.textContent = '❌ URL tidak valid. Harus diawali https://script.google.com/...';
+          return;
+        }
+
+        chrome.storage.local.set({ gasWebAppUrl: url }, async () => {
+          await testConnection(url);
+        });
+      });
+
+      btnTest.addEventListener('click', async () => {
+        const url = urlInput.value.trim();
+        if (!url) {
+          statusMsg.className = 'status-msg error';
+          statusMsg.textContent = '❌ Masukkan URL Web App dulu';
+          return;
+        }
+        await testConnection(url);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAS App Builder</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">⚡ GAS</span>
+      <span class="logo-sub">App Builder</span>
+    </div>
+    <div class="header-right">
+      <span id="connectionStatus" class="status-dot disconnected" title="Status Koneksi"></span>
+      <button id="btnSettings" class="btn-icon" title="Pengaturan">⚙️</button>
+    </div>
+  </header>
+
+  <!-- Tab Navigation -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="data">📋 Data</button>
+    <button class="tab" data-tab="sheets">🗂️ Sheets</button>
+    <button class="tab" data-tab="add">➕ Tambah</button>
+    <button class="tab" data-tab="stats">📊 Statistik</button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="content">
+    
+    <!-- TAB: Data Viewer -->
+    <section id="tab-data" class="tab-content active">
+      <div class="toolbar">
+        <select id="sheetSelect" class="select">
+          <option value="">-- Pilih Sheet --</option>
+        </select>
+        <input type="text" id="searchInput" class="input" placeholder="🔍 Cari data..." />
+        <button id="btnRefresh" class="btn btn-sm" title="Refresh">🔄</button>
+      </div>
+      <div id="dataContainer" class="data-container">
+        <div class="empty-state">
+          <span class="empty-icon">📋</span>
+          <p>Pilih sheet untuk melihat data</p>
+        </div>
+      </div>
+      <div id="pagination" class="pagination"></div>
+    </section>
+
+    <!-- TAB: Sheets Manager -->
+    <section id="tab-sheets" class="tab-content">
+      <div class="toolbar">
+        <input type="text" id="newSheetName" class="input" placeholder="Nama sheet baru..." />
+        <button id="btnCreateSheet" class="btn btn-sm">➕ Buat</button>
+        <button id="btnRefreshSheets" class="btn btn-sm">🔄</button>
+      </div>
+      <div id="sheetsList" class="data-container">
+        <div class="empty-state">
+          <span class="empty-icon">🗂️</span>
+          <p>Memuat daftar sheet...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Add Data -->
+    <section id="tab-add" class="tab-content">
+      <div class="toolbar">
+        <select id="addSheetSelect" class="select">
+          <option value="">-- Pilih Sheet --</option>
+        </select>
+      </div>
+      <div id="addFormContainer">
+        <div class="empty-state">
+          <span class="empty-icon">➕</span>
+          <p>Pilih sheet untuk menambah data</p>
+        </div>
+      </div>
+      <button id="btnSubmitAdd" class="btn btn-primary" style="display:none; margin-top:12px;">💾 Simpan Data</button>
+    </section>
+
+    <!-- TAB: Stats -->
+    <section id="tab-stats" class="tab-content">
+      <div class="toolbar">
+        <select id="statsSheetSelect" class="select">
+          <option value="">-- Pilih Sheet --</option>
+        </select>
+        <button id="btnRefreshStats" class="btn btn-sm">🔄</button>
+      </div>
+      <div id="statsContainer">
+        <div class="empty-state">
+          <span class="empty-icon">📊</span>
+          <p>Pilih sheet untuk lihat statistik</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span id="footerInfo">Belum terhubung</span>
+  </footer>
+
+  <!-- Modal Overlay -->
+  <div id="modalOverlay" class="modal-overlay" style="display:none;">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Detail</h3>
+        <button id="modalClose" class="btn-icon">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

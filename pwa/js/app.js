@@ -101,30 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       await GAS_API.testConnection();
       setStatus('settingsUrlStatus', '✅ Koneksi OK!', 'success');
-    } catch(e) { setStatus('settingsUrlStatus', `❌ ${e.message}`, 'error'); }
-  };
-
-  document.getElementById('settingsSaveGemini').onclick = () => {
-    const key = document.getElementById('settingsGeminiKey').value.trim();
-    if (!key?.startsWith('AIza')) { setStatus('settingsGeminiStatus', '❌ Key tidak valid', 'error'); return; }
-    GAS_API.setGeminiKey(key);
-    setStatus('settingsGeminiStatus', '✅ Key tersimpan!', 'success');
-    updateGeminiBadge();
-  };
-
-  document.getElementById('settingsTestGemini').onclick = async () => {
-    const key = document.getElementById('settingsGeminiKey').value.trim();
-    if (!key) { setStatus('settingsGeminiStatus', 'Masukkan key dulu', 'error'); return; }
-    setStatus('settingsGeminiStatus', '⏳ Testing...', 'loading');
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({contents:[{parts:[{text:'Halo'}]}]})
-      });
-      const d = await res.json();
-      if (d.candidates) setStatus('settingsGeminiStatus', '✅ Key valid!', 'success');
-      else throw new Error(d.error?.message||'Gagal');
-    } catch(e) { setStatus('settingsGeminiStatus', `❌ ${e.message}`, 'error'); }
+    } catch(e) { setStatus('settingsUrlStatus', '❌ ' + e.message, 'error'); }
   };
 
   document.getElementById('clearDataBtn').onclick = () => {
@@ -356,7 +333,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   // ===== AI GENERATOR =====
-  let currentAIMode = 'script'; // 'script' or 'sheet'
+  let currentAIMode = 'script';
   let lastGeneratedCode = '';
   let lastGeneratedSheet = null;
 
@@ -384,30 +361,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('aiSheetPrompt').focus();
   });
 
-  // GENERATE SCRIPT
-  document.getElementById('aiGenerateBtn').onclick = async () => {
-    const prompt = document.getElementById('aiPrompt').value.trim();
-    const key = GAS_API.getGeminiKey();
+  // ===== HELPER: get AI config for current provider =====
+  function getAiCfg() {
+    var cfg = GAS_API.getAiConfig();
+    if (!cfg._provider) { cfg._provider = 'gemini'; GAS_API.setAiConfig(cfg); }
+    return cfg;
+  }
+
+  // ===== GENERATE SCRIPT =====
+  document.getElementById('aiGenerateBtn').onclick = async function() {
+    var prompt = document.getElementById('aiPrompt').value.trim();
+    var cfg = getAiCfg();
     if (!prompt) { toast('Tulis deskripsi dulu!', 'error'); return; }
-    if (!key) { toast('Atur Gemini Key di Settings!', 'error'); return; }
+    
+    // Validate provider config
+    var p = AI_GEN.providers[cfg._provider || 'gemini'];
+    var missing = [];
+    for (var i = 0; i < (p.fields || []).length; i++) {
+      var f = p.fields[i];
+      if (f.secret && !cfg[f.key]) missing.push(f.label);
+    }
+    if (missing.length) { toast('Atur ' + missing.join(', ') + ' di Settings!', 'error'); return; }
 
     showAIResult();
-
     try {
-      const raw = await AI_GENERATOR.generate(prompt, key);
-      lastGeneratedCode = raw.replace(/```javascript\n?/g,'').replace(/```\n?/g,'').trim();
+      var result = await AI_GEN.generate('script', prompt, cfg);
+      lastGeneratedCode = result.code;
       
       hideAILoading();
       document.getElementById('aiResult').style.display = 'block';
       document.getElementById('resultTitle').textContent = '📜 Script Generated';
       document.getElementById('aiCode').textContent = lastGeneratedCode;
 
-      const v = AI_GENERATOR.validateScript(lastGeneratedCode);
-      document.getElementById('aiValidation').innerHTML = v.valid 
-        ? '<span class="ok">✅ Siap pakai</span>' 
-        : v.issues.map(i => `<span class="warn">${i}</span>`).join('<br>');
+      document.getElementById('aiValidation').innerHTML = 
+        '<span class="ok">✅ Siap pakai</span>';
 
-      // Show Copy + Deploy buttons
       document.getElementById('aiCopyBtn').style.display = '';
       document.getElementById('aiDeployBtn').style.display = '';
       document.getElementById('aiPushSheetBtn').style.display = '';
@@ -423,132 +411,156 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
-  // GENERATE & PUSH SHEET
-  document.getElementById('aiSheetBtn').onclick = async () => {
-    const prompt = document.getElementById('aiSheetPrompt').value.trim();
-    const sheetName = document.getElementById('aiSheetName').value.trim() || ('AI_Sheet_' + new Date().toISOString().slice(0,10));
-    const key = GAS_API.getGeminiKey();
+  // ===== GENERATE & PUSH SHEET =====
+  document.getElementById('aiSheetBtn').onclick = async function() {
+    var prompt = document.getElementById('aiSheetPrompt').value.trim();
+    var sheetName = document.getElementById('aiSheetName').value.trim() || ('AI_Sheet_' + new Date().toISOString().slice(0,10));
+    var cfg = getAiCfg();
     
     if (!prompt) { toast('Tulis deskripsi data dulu!', 'error'); return; }
-    if (!key) { toast('Atur Gemini Key di Settings!', 'error'); return; }
+    
+    var p = AI_GEN.providers[cfg._provider || 'gemini'];
+    var missing = [];
+    for (var i = 0; i < (p.fields || []).length; i++) {
+      var f = p.fields[i];
+      if (f.secret && !cfg[f.key]) missing.push(f.label);
+    }
+    if (missing.length) { toast('Atur ' + missing.join(', ') + ' di Settings!', 'error'); return; }
 
     showAIResult();
     document.getElementById('resultTitle').textContent = '⏳ Generate & Push ke Sheets...';
 
     try {
-      // Panggil langsung GAS backend dengan generateSheet action
-      const url = GAS_API.getUrl();
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          action: 'generateSheet',
-          prompt: prompt,
-          geminiKey: key,
-          name: sheetName
-        })
-      });
-      const r = await res.json();
+      // Generate data dengan AI
+      var result = await AI_GEN.generate('sheet', prompt, cfg);
+      lastGeneratedSheet = result;
       
-      if (r.error) throw new Error(r.error);
-
-      hideAILoading();
-      document.getElementById('aiResult').style.display = 'block';
-      
-      lastGeneratedSheet = r;
-      document.getElementById('resultTitle').textContent = '✅ Sheet Created!';
-      document.getElementById('aiCode').textContent = 
-        `📊 Sheet: ${r.sheet}\n` +
-        `📋 Baris: ${r.rows}\n` +
-        `📋 Kolom: ${r.columns}\n` +
-        `🔤 Headers: ${(r.headers||[]).join(', ')}\n\n` +
-        `🔗 ${r.url}`;
-      document.getElementById('aiValidation').innerHTML = 
-        `<span class="ok">✅ ${r.rows} baris data berhasil dibuat di sheet "${r.sheet}"!</span>`;
-
-      // Show only sheet-related buttons
-      document.getElementById('aiCopyBtn').style.display = '';
-      document.getElementById('aiDeployBtn').style.display = 'none';
-      document.getElementById('aiPushSheetBtn').style.display = 'none';
-      
-      document.getElementById('aiCopyBtn').onclick = () => {
-        navigator.clipboard.writeText(r.url)
-          .then(() => toast('✅ Link sheet tercopy!', 'success'))
-          .catch(() => toast('❌ Gagal copy', 'error'));
-      };
-    } catch(e) {
-      showAIError(e);
-    } finally {
-      document.getElementById('aiSheetBtn').disabled = false;
-      document.getElementById('aiSheetBtn').textContent = '📊 Generate & Push ke Sheets';
-    }
-  };
-
-  // 📤 PUSH GENERATED SCRIPT TO NEW SHEET
-  async function pushToSheet() {
-    if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
-    const sheetName = 'GAS_Script_' + new Date().toISOString().slice(0,10);
-    
-    showAILoading('📤 Push ke sheet...');
-    try {
-      // Buat sheet baru dengan kode sebagai data
-      const url = GAS_API.getUrl();
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          action: 'addRow',
-          sheet: sheetName,
-          data: JSON.stringify({
-            timestamp: new Date().toISOString(),
-            code: lastGeneratedCode,
-            prompt: document.getElementById('aiPrompt').value.trim()
-          })
-        })
-      });
-      await res.json();
-      
-      hideAILoading();
-      toast(`✅ Script tersimpan di sheet "${sheetName}"!`, 'success');
-      
-      // Auto-switch ke data tab
-      setTimeout(() => loadSheetsDropdowns(), 500);
-    } catch(e) {
-      hideAILoading();
-      toast(`❌ ${e.message}`, 'error');
-    }
-  }
-
-  // 🚀 DEPLOY SCRIPT (buka script.google.com + simpan ke sheet)
-  async function deployScript() {
-    if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
-    var prompt = document.getElementById('aiPrompt').value.trim();
-    var sheetName = 'GAS_Script_' + new Date().toISOString().slice(0,10);
-    var msg = '📌 Simpan kode ke sheet dulu...';
-    
-    showAILoading('📤 Simpan kode ke sheet...');
-    try {
-      // Simpan kode ke sheet dulu
+      // Kirim ke GAS backend untuk buat sheet
       var url = GAS_API.getUrl();
+      if (!url) throw new Error('Web App URL belum diatur di Settings');
+      
       var res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          action: 'addRow',
+          action: 'bulkAdd',
           sheet: sheetName,
-          data: JSON.stringify({
-            timestamp: new Date().toISOString(),
-            prompt: prompt,
-            code: lastGeneratedCode
-          })
+          rows: JSON.stringify(result.data),
+          headers: result.headers.join(',')
         })
       });
+      var r = await res.json();
+      if (r.error) throw new Error(r.error);
+      
+      // Coba buat sheet dulu kalo bulkAdd gagal karena sheet belum ada
+      if (r.error && r.error.indexOf('not found') >= 0) {
+        await fetch(url, {
+          method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          body: new URLSearchParams({action:'createSheet', name:sheetName, headers: result.headers.join(',')})
+        });
+        // Coba lagi
+        res = await fetch(url, {
+          method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+          body: new URLSearchParams({action:'bulkAdd', sheet:sheetName, rows:JSON.stringify(result.data)})
+        });
+        r = await res.json();
+        if (r.error) throw new Error(r.error);
+      }
+
+      hideAILoading();
+      document.getElementById('aiResult').style.display = 'block';
+      
+      document.getElementById('resultTitle').textContent = '✅ Sheet Created!';
+      document.getElementById('aiCode').textContent = 
+        '📊 Sheet: ' + sheetName + '\n' +
+        '📋 Baris: ' + result.rows + '\n' +
+        '📋 Kolom: ' + result.headers.length + '\n' +
+        '🔤 Headers: ' + result.headers.join(', ') + '\n';
+      document.getElementById('aiValidation').innerHTML = 
+        '<span class="ok">✅ ' + result.rows + ' baris data berhasil dibuat!</span>';
+
+      document.getElementById('aiCopyBtn').style.display = '';
+      document.getElementById('aiDeployBtn').style.display = 'none';
+      document.getElementById('aiPushSheetBtn').style.display = 'none';
+      
+      document.getElementById('aiCopyBtn').onclick = function() {
+        navigator.clipboard.writeText(sheetName)
+          .then(function() { toast('✅ Nama sheet tercopy!', 'success'); })
+          .catch(function() { toast('❌ Gagal copy', 'error'); });
+      };
+      
+      // Refresh sheet list
+      loadSheetsDropdowns();
+    } catch(e) {
+      showAIError(e);
+    } finally {
+      document.getElementById('aiSheetBtn').disabled = false;
+      document.getElementById('aiSheetBtn').textContent = '📊 Generate & Push';
+    }
+  };
+
+  // ===== PUSH TO SHEET =====
+  async function pushToSheet() {
+    if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
+    var sheetName = 'GAS_Code_' + new Date().toISOString().slice(0,10);
+    
+    showAILoading('📤 Simpan kode ke sheet...');
+    try {
+      var url = GAS_API.getUrl();
+      var res = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({action:'createSheet', name:sheetName, headers:'timestamp,prompt,code'})
+      });
       await res.json();
+      
+      res = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+          action:'addRow', sheet:sheetName,
+          data: JSON.stringify({timestamp: new Date().toISOString(), prompt: document.getElementById('aiPrompt').value.trim(), code: lastGeneratedCode})
+        })
+      });
+      var r = await res.json();
+      if (r.error) throw new Error(r.error);
+      
+      hideAILoading();
+      toast('✅ Kode tersimpan di sheet "' + sheetName + '"!', 'success');
+      loadSheetsDropdowns();
+    } catch(e) {
+      hideAILoading();
+      toast('❌ Gagal: ' + e.message, 'error');
+    }
+  }
+
+  // ===== DEPLOY SCRIPT =====
+  async function deployScript() {
+    if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
+    var sheetName = 'GAS_Script_' + new Date().toISOString().slice(0,10);
+    
+    showAILoading('📤 Simpan kode ke sheet...');
+    try {
+      var url = GAS_API.getUrl();
+      // Buat sheet dulu
+      var res = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({action:'createSheet', name:sheetName, headers:'timestamp,prompt,code'})
+      });
+      await res.json();
+      
+      // Simpan kode
+      res = await fetch(url, {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({
+          action:'addRow', sheet:sheetName,
+          data: JSON.stringify({timestamp: new Date().toISOString(), prompt: document.getElementById('aiPrompt').value.trim(), code: lastGeneratedCode})
+        })
+      });
+      var r = await res.json();
+      if (r.error) throw new Error(r.error);
       
       hideAILoading();
       toast('✅ Kode tersimpan di sheet "' + sheetName + '"!', 'success');
       
-      // Buka script.new di tab baru
       setTimeout(function() {
         window.open('https://script.new', '_blank');
         toast('📋 Buka tab baru, paste kode dari sheet, lalu deploy!', 'info');
@@ -559,66 +571,74 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('aiCode').textContent = 
         '📋 Kode tersimpan di sheet: "' + sheetName + '"\n\n' +
         '📝 Langkah-langkah:\n' +
-        '1. Tab baru udah terbuka: script.new\n' +
-        '2. Buka sheet "' + sheetName + '" di spreadsheet ini\n' +
+        '1. Tab baru terbuka: script.new\n' +
+        '2. Buka sheet "' + sheetName + '"\n' +
         '3. Copy kode dari kolom "code"\n' +
         '4. Paste di editor Apps Script\n' +
-        '5. Klik 🟢 Deploy → New deployment → Web app\n' +
-        '6. Copy URL → paste di Settings PWA\n\n' +
-        'Atau klik tombol 📋 Copy di bawah buat copy langsung kodenya!';
+        '5. Deploy → New deployment → Web app';
       document.getElementById('aiValidation').innerHTML = 
-        '<span class="ok">✅ Kode siap! Copy & paste ke script.new lalu deploy.</span>';
+        '<span class="ok">✅ Siap deploy!</span>';
       
       document.getElementById('aiCopyBtn').style.display = '';
       document.getElementById('aiDeployBtn').style.display = '';
       document.getElementById('aiPushSheetBtn').style.display = 'none';
       document.getElementById('aiCopyBtn').onclick = copyCode;
-      document.getElementById('aiDeployBtn').onclick = function() {
-        window.open('https://script.new', '_blank');
-        toast('📋 Buka script.new, paste kode!', 'info');
-      };
+      document.getElementById('aiDeployBtn').onclick = function() { window.open('https://script.new', '_blank'); };
     } catch(e) {
       hideAILoading();
-      toast('❌ Gagal simpan: ' + e.message, 'error');
-      // Fallback: tetap buka script.new meski gagal simpan
+      toast('❌ Gagal: ' + e.message, 'error');
       setTimeout(function() { window.open('https://script.new', '_blank'); }, 500);
     }
   }
 
+  // ===== COPY CODE =====
   function copyCode() {
+    if (!lastGeneratedCode) { toast('Tidak ada kode!', 'error'); return; }
     navigator.clipboard.writeText(lastGeneratedCode)
-      .then(() => toast('✅ Tercopy!', 'success'))
-      .catch(() => { const t = document.createElement('textarea'); t.value = lastGeneratedCode; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); toast('✅ Tercopy!', 'success'); });
+      .then(function() { toast('✅ Kode tercopy!', 'success'); })
+      .catch(function() { 
+        var t = document.createElement('textarea');
+        t.value = lastGeneratedCode; 
+        document.body.appendChild(t); 
+        t.select(); 
+        document.execCommand('copy'); 
+        t.remove(); 
+        toast('✅ Tercopy!', 'success'); 
+      });
   }
 
-  function showAILoading(msg) {
-    document.getElementById('aiLoading').style.display = 'block';
-    document.getElementById('aiLoading').querySelector('p').textContent = msg || '🤖 Memproses...';
-    document.getElementById('aiResult').style.display = 'none';
-  }
-
-  function hideAILoading() {
-    document.getElementById('aiLoading').style.display = 'none';
-  }
-
+  // ===== HELPERS =====
   function showAIResult() {
-    document.getElementById('aiLoading').style.display = 'block';
-    document.getElementById('aiResult').style.display = 'none';
-    // Hide all action buttons first
+    document.getElementById('aiResult').style.display = 'block';
+    document.getElementById('resultTitle').textContent = '⏳ Memproses...';
+    document.getElementById('aiCode').textContent = '';
+    document.getElementById('aiValidation').innerHTML = '<div class="loader" style="margin:16px auto"></div>';
     document.getElementById('aiCopyBtn').style.display = 'none';
     document.getElementById('aiDeployBtn').style.display = 'none';
     document.getElementById('aiPushSheetBtn').style.display = 'none';
   }
-
-  function showAIError(e) {
-    document.getElementById('aiLoading').style.display = 'none';
+  
+  function showAILoading(msg) {
+    var t = document.getElementById('resultTitle');
     document.getElementById('aiResult').style.display = 'block';
-    document.getElementById('resultTitle').textContent = '❌ Error';
-    document.getElementById('aiCode').textContent = `❌ ${e.message}`;
-    document.getElementById('aiValidation').innerHTML = '<span class="warn">Cek API Key, koneksi, atau coba lagi</span>';
+    t.textContent = '⏳ ' + msg;
+    document.getElementById('aiCode').textContent = '';
+    document.getElementById('aiValidation').innerHTML = '<div class="loader" style="margin:16px auto"></div>';
+  }
+  
+  function hideAILoading() {
+    document.getElementById('resultTitle').textContent = document.getElementById('resultTitle').textContent.replace('⏳ ','');
+  }
+  
+  function showAIError(e) {
+    document.getElementById('aiResult').style.display = 'block';
+    document.getElementById('resultTitle').textContent = '❌ Error!';
+    document.getElementById('aiCode').textContent = e.message || 'Unknown error';
+    document.getElementById('aiValidation').innerHTML = '<span class="warn">⚠️ Cek koneksi dan API key</span>';
     document.getElementById('aiCopyBtn').style.display = 'none';
     document.getElementById('aiDeployBtn').style.display = 'none';
     document.getElementById('aiPushSheetBtn').style.display = 'none';
+    toast(e.message, 'error');
   }
 
   // ===== STATS =====
@@ -681,11 +701,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     dot.className = `status-dot ${connected ? 'connected' : 'disconnected'}`;
   }
 
-  function updateGeminiBadge() {
-    const key = GAS_API.getGeminiKey();
-    const badge = document.getElementById('aiStatusBadge');
-    if (key) { badge.textContent = '✅ Key OK'; badge.className = 'badge badge-success'; }
-    else { badge.textContent = '⚠️ Key?'; badge.className = 'badge badge-warning'; }
+  function updateAiBadge() {
+    var cfg = GAS_API.getAiConfig();
+    var provider = cfg._provider || 'gemini';
+    var badge = document.getElementById('aiStatusBadge');
+    badge.textContent = '✅ ' + provider.toUpperCase();
+    badge.className = 'badge badge-success';
   }
 
   // ===== INIT =====
@@ -693,6 +714,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     loadDashboard();
     loadSheetsDropdowns();
     loadSheets();
-    updateGeminiBadge();
+    updateAiBadge();
   }
 });

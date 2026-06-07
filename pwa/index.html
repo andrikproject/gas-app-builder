@@ -199,19 +199,27 @@
       </div>
 
       <div class="settings-card">
-        <label>🤖 Gemini API Key</label>
-        <input type="text" id="settingsGeminiKey" placeholder="AIzaSy...">
+        <label>🤖 AI Provider</label>
+        <select id="settingsAiProvider" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:14px;margin-bottom:8px">
+          <option value="gemini">🤖 Google Gemini (default)</option>
+          <option value="openai">🟢 OpenAI (ChatGPT)</option>
+          <option value="ollama">🦙 Ollama (Local/VPS)</option>
+          <option value="custom">⚙️ Custom API</option>
+        </select>
+        
+        <div id="aiProviderFields"></div>
+        
         <div class="flex-row" style="gap:8px;margin-top:8px">
-          <button class="btn btn-primary" style="flex:1" id="settingsSaveGemini">💾 Simpan</button>
-          <button class="btn" style="flex:1" id="settingsTestGemini">🔄 Test</button>
+          <button class="btn btn-primary" style="flex:1" id="settingsSaveAi">💾 Simpan</button>
+          <button class="btn" style="flex:1" id="settingsTestAi">🔄 Test</button>
         </div>
-        <div id="settingsGeminiStatus"></div>
+        <div id="settingsAiStatus"></div>
       </div>
 
       <div class="settings-card">
         <label>📱 App Info</label>
         <p style="color:#94a3b8;font-size:13px;line-height:1.6">
-          Version 2.0 (Mobile PWA)<br>
+          Version 2.1 (Multi-AI Provider)<br>
           Dibuat oleh @andrikproject 🚀<br>
           <button class="btn btn-sm" id="clearDataBtn" style="margin-top:8px">🗑️ Reset Data</button>
         </p>

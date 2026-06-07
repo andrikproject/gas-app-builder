@@ -18,6 +18,8 @@
  * - GET    ?action=listSheets
  * - GET    ?action=info
  * - GET    ?action=stats&sheet=NamaSheet
+ * - POST   {action:"generateScript", prompt:"...", geminiKey:"..."}
+ * - POST   {action:"testGeminiKey", geminiKey:"..."}
  */
 
 const SCRIPT_VERSION = "1.0.0";
@@ -57,6 +59,10 @@ function handleRequest(e, method) {
       // === ADMIN ===
       case 'bulkAdd':     return sendJSON(bulkAddData(params));
       case 'clearSheet':  return sendJSON(clearSheetData(params));
+      
+      // === AI ===
+      case 'generateScript': return sendJSON(generateScript(params));
+      case 'testGeminiKey':  return sendJSON(testGeminiKey(params));
       
       default:            return sendJSON({error: `Unknown action: ${action}`}, 400);
     }
@@ -309,11 +315,97 @@ function sendJSON(data, statusCode = 200) {
   output.setMimeType(ContentService.MimeType.JSON);
   
   if (statusCode >= 400) {
-    // Add CORS headers manually
     output.setContent(JSON.stringify(data, null, 2));
   }
   
   return output;
+}
+
+// ========== AI INTEGRATION ==========
+
+const AI_SYSTEM_PROMPT = `Kamu adalah asisten AI yang ahli dalam Google Apps Script (GAS).
+
+TUGAS KAMU:
+Buatkan Google Apps Script code berdasarkan permintaan user.
+
+ATURAN:
+1. HASILKAN HANYA KODE - tanpa penjelasan
+2. Gunakan komentar (//) untuk penjelasan singkat
+3. Pastikan kode SIAP PAKAI (copy-paste ke Apps Script editor)
+4. Tambahkan fungsi doGet() dan doPost() jika perlu Web App
+5. JANGAN tambahkan teks seperti "Ini dia kodenya"
+6. LANGSUNG berikan kode yang siap pakai`;
+
+function generateScript(params) {
+  const prompt = params.prompt || params.text;
+  const apiKey = params.geminiKey || params.apiKey;
+  
+  if (!prompt) throw new Error('Prompt diperlukan');
+  if (!apiKey) throw new Error('Gemini API Key diperlukan');
+  
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [
+      { role: "user", parts: [{ text: AI_SYSTEM_PROMPT }] },
+      { role: "model", parts: [{ text: "Siap. Berikan deskripsi script yang kamu butuhkan." }] },
+      { role: "user", parts: [{ text: `Buatkan Google Apps Script untuk: ${prompt}` }] }
+    ],
+    generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
+  };
+  
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
+  
+  if (result.error) throw new Error(result.error.message);
+  if (!result.candidates || result.candidates.length === 0) throw new Error('No response from Gemini');
+  
+  const text = result.candidates[0].content.parts[0].text;
+  const cleanCode = text.replace(/```javascript\n?/g, '').replace(/```\n?/g, '').trim();
+  
+  return {
+    success: true,
+    code: cleanCode,
+    model: 'gemini-2.0-flash',
+    length: cleanCode.length
+  };
+}
+
+function testGeminiKey(params) {
+  const apiKey = params.geminiKey || params.apiKey;
+  if (!apiKey) throw new Error('Gemini API Key diperlukan');
+  
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [{ parts: [{ text: 'Halo, balas: "OK" saja' }] }],
+    generationConfig: { maxOutputTokens: 10 }
+  };
+  
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
+  
+  if (result.error) throw new Error(result.error.message);
+  
+  return {
+    success: true,
+    message: 'API Key valid!',
+    model: 'gemini-2.0-flash'
+  };
 }
 
 // ========== TEST FUNCTION (run in editor) ==========

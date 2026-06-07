@@ -485,4 +485,122 @@ document.addEventListener('DOMContentLoaded', async () => {
     div.textContent = str;
     return div.innerHTML;
   }
+
+  // ======== AI GENERATOR LOGIC ========
+
+  // Check Gemini key status
+  async function updateAIStatus() {
+    const { geminiApiKey } = await chrome.storage.local.get('geminiApiKey');
+    const statusText = document.getElementById('aiStatusText');
+    if (geminiApiKey) {
+      statusText.textContent = '🤖 AI siap — Gemini terhubung';
+      statusText.style.color = 'var(--success)';
+    } else {
+      statusText.textContent = '⚠️ API Key belum diatur — klik ⚙️';
+      statusText.style.color = 'var(--warning)';
+    }
+  }
+
+  // AI Settings button
+  document.getElementById('btnAISettings')?.addEventListener('click', () => {
+    chrome.runtime.openOptionsPage();
+  });
+
+  // Quick action buttons
+  document.querySelectorAll('.ai-qaction').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const prompt = btn.dataset.prompt;
+      document.getElementById('aiPrompt').value = prompt;
+      document.getElementById('aiPrompt').focus();
+    });
+  });
+
+  // Generate button
+  document.getElementById('btnGenerate')?.addEventListener('click', async () => {
+    const prompt = document.getElementById('aiPrompt').value.trim();
+    const { geminiApiKey } = await chrome.storage.local.get('geminiApiKey');
+
+    if (!prompt) {
+      showToast('Masukkan deskripsi script!', 'error');
+      return;
+    }
+
+    if (!geminiApiKey) {
+      showToast('Atur GEMINI_API_KEY di ⚙️ Settings dulu!', 'error');
+      return;
+    }
+
+    // Show loading
+    document.getElementById('aiLoading').style.display = 'block';
+    document.getElementById('aiResult').style.display = 'none';
+    document.getElementById('btnGenerate').disabled = true;
+    document.getElementById('btnGenerate').textContent = '⏳ Menulis kode...';
+
+    try {
+      const result = await AI_GENERATOR.generate(prompt, geminiApiKey);
+      
+      // Hide loading, show result
+      document.getElementById('aiLoading').style.display = 'none';
+      document.getElementById('aiResult').style.display = 'block';
+      
+      const outputEl = document.getElementById('aiScriptOutput');
+      
+      // Format the output: strip ``` markers for display, keep for copy
+      const cleanCode = result.replace(/```javascript\n?/g, '').replace(/```\n?/g, '').trim();
+      outputEl.textContent = cleanCode;
+
+      // Validate
+      const validation = AI_GENERATOR.validateScript(cleanCode);
+      const validationEl = document.getElementById('aiValidation');
+      if (validation.valid) {
+        validationEl.innerHTML = '<span class="valid">✅ Script siap pakai</span>';
+      } else {
+        validationEl.innerHTML = validation.issues.map(i => `<span class="warning">${i}</span>`).join('<br>');
+      }
+
+      // Copy button
+      document.getElementById('btnCopyScript').onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(cleanCode);
+          showToast('✅ Script tercopy!', 'success');
+        } catch {
+          // Fallback
+          const ta = document.createElement('textarea');
+          ta.value = cleanCode;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          ta.remove();
+          showToast('✅ Script tercopy!', 'success');
+        }
+      };
+
+      // Deploy button - open Apps Script editor
+      document.getElementById('btnDeployScript').onclick = () => {
+        // Try to open the GAS Web App or sheet
+        const url = GAS_API.getUrl();
+        if (url) {
+          const sheetUrl = url.replace(/\/macros\/s\/.*/, '/edit');
+          chrome.tabs.create({ url: sheetUrl });
+        } else {
+          chrome.tabs.create({ url: 'https://script.google.com' });
+        }
+      };
+
+    } catch(err) {
+      document.getElementById('aiLoading').style.display = 'none';
+      document.getElementById('aiResult').style.display = 'block';
+      document.getElementById('aiScriptOutput').textContent = `❌ Error: ${err.message}`;
+      document.getElementById('aiValidation').innerHTML = '<span class="warning">Coba periksa API Key atau koneksi internet</span>';
+    } finally {
+      document.getElementById('btnGenerate').disabled = false;
+      document.getElementById('btnGenerate').textContent = '🚀 Generate Script';
+    }
+  });
+
+  // Update AI status when switching to AI tab
+  document.querySelector('.tab[data-tab="ai"]')?.addEventListener('click', updateAIStatus);
+  
+  // Initial AI status
+  updateAIStatus();
 });

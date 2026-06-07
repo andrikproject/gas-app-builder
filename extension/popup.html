@@ -24,6 +24,7 @@
     <button class="tab active" data-tab="data">📋 Data</button>
     <button class="tab" data-tab="sheets">🗂️ Sheets</button>
     <button class="tab" data-tab="add">➕ Tambah</button>
+    <button class="tab" data-tab="ai">🤖 AI</button>
     <button class="tab" data-tab="stats">📊 Statistik</button>
   </nav>
 
@@ -79,6 +80,37 @@
       <button id="btnSubmitAdd" class="btn btn-primary" style="display:none; margin-top:12px;">💾 Simpan Data</button>
     </section>
 
+    <!-- TAB: AI Script Generator -->
+    <section id="tab-ai" class="tab-content">
+      <div class="ai-status" id="aiStatusBar">
+        <span id="aiStatusText">🤖 AI siap membantu</span>
+        <button id="btnAISettings" class="btn btn-sm" title="Settings API Key">⚙️</button>
+      </div>
+      <div class="ai-quick-actions">
+        <button class="ai-qaction" data-prompt="Buat fungsi untuk menambah data baru ke sheet">➕ CRUD</button>
+        <button class="ai-qaction" data-prompt="Buat Web App dengan doGet dan doPost">🌐 Web App</button>
+        <button class="ai-qaction" data-prompt="Buat fungsi untuk mengirim email otomatis dari sheet">📧 Email</button>
+        <button class="ai-qaction" data-prompt="Buat fungsi untuk generate PDF dari data sheet">📄 PDF</button>
+      </div>
+      <textarea id="aiPrompt" class="ai-prompt-input" placeholder="Deskripsikan script yang kamu butuhkan...&#10;&#10;Contoh: &#10;'Buat fungsi untuk menyimpan data form ke sheet'&#10;'Buat Web App CRUD untuk data karyawan'&#10;'Buat auto-email reminder dari deadline di sheet'" rows="4"></textarea>
+      <button id="btnGenerate" class="btn btn-primary btn-full">🚀 Generate Script</button>
+      <div id="aiResult" class="ai-result" style="display:none;">
+        <div class="ai-result-header">
+          <span>📜 Hasil Script</span>
+          <div class="ai-result-actions">
+            <button id="btnCopyScript" class="btn btn-sm" title="Copy ke clipboard">📋 Copy</button>
+            <button id="btnDeployScript" class="btn btn-sm" title="Buka Apps Script">🚀 Deploy</button>
+          </div>
+        </div>
+        <pre id="aiScriptOutput" class="ai-code-output"></pre>
+        <div id="aiValidation" class="ai-validation"></div>
+      </div>
+      <div id="aiLoading" class="ai-loading" style="display:none;">
+        <div class="loading-spinner"></div>
+        <p style="text-align:center;color:var(--text-muted);margin-top:8px;">🤖 Gemini sedang menulis kode...</p>
+      </div>
+    </section>
+
     <!-- TAB: Stats -->
     <section id="tab-stats" class="tab-content">
       <div class="toolbar">
@@ -117,6 +149,7 @@
   <div id="toast" class="toast"></div>
 
   <script src="js/api.js"></script>
+  <script src="js/generator.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

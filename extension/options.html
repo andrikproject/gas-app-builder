@@ -267,6 +267,18 @@
       <div id="statusMessage"></div>
     </div>
 
+    <!-- GEMINI API Configuration -->
+    <div class="card">
+      <h2>🤖 Integrasi Gemini AI</h2>
+      <label>GEMINI API Key</label>
+      <input type="text" id="geminiApiKey" placeholder="AIzaSy..." autocomplete="off" />
+      <div class="btn-group">
+        <button class="btn btn-primary" id="btnGeminiSave">💾 Simpan Key</button>
+        <button class="btn btn-secondary" id="btnGeminiTest">🔄 Test Key</button>
+      </div>
+      <div id="geminiStatus"></div>
+    </div>
+
     <!-- Info -->
     <div class="card">
       <h2>📋 API Endpoints</h2>
@@ -292,25 +304,29 @@
       const statusMsg = document.getElementById('statusMessage');
       const btnSave = document.getElementById('btnSave');
       const btnTest = document.getElementById('btnTest');
+      const geminiInput = document.getElementById('geminiApiKey');
+      const geminiStatus = document.getElementById('geminiStatus');
+      const btnGeminiSave = document.getElementById('btnGeminiSave');
+      const btnGeminiTest = document.getElementById('btnGeminiTest');
 
-      // Load saved URL
-      chrome.storage.local.get(['gasWebAppUrl'], (data) => {
-        if (data.gasWebAppUrl) {
-          urlInput.value = data.gasWebAppUrl;
-        }
+      // Load saved URL & Gemini Key
+      chrome.storage.local.get(['gasWebAppUrl', 'geminiApiKey'], (data) => {
+        if (data.gasWebAppUrl) urlInput.value = data.gasWebAppUrl;
+        if (data.geminiApiKey) geminiInput.value = data.geminiApiKey;
       });
 
       async function testConnection(url) {
+        if (!url || !url.startsWith('https://script.google.com')) {
+          statusMsg.className = 'status-msg error';
+          statusMsg.textContent = '❌ URL tidak valid. Harus diawali https://script.google.com/...';
+          return false;
+        }
         statusMsg.className = 'status-msg loading';
         statusMsg.textContent = '⏳ Menghubungkan...';
-
         try {
-          const response = await fetch(`${url.replace(/\/+$/, '')}?action=info`, {
-            method: 'GET'
-          });
+          const response = await fetch(`${url.replace(/\/+$/, '')}?action=info`, { method: 'GET' });
           const text = await response.text();
           const data = JSON.parse(text);
-          
           statusMsg.className = 'status-msg success';
           statusMsg.textContent = `✅ Terhubung! Spreadsheet: ${data.name || 'Google Sheets'} (${data.sheets?.length || 0} sheet)`;
           return true;
@@ -328,7 +344,6 @@
           statusMsg.textContent = '❌ URL tidak valid. Harus diawali https://script.google.com/...';
           return;
         }
-
         chrome.storage.local.set({ gasWebAppUrl: url }, async () => {
           await testConnection(url);
         });
@@ -342,6 +357,51 @@
           return;
         }
         await testConnection(url);
+      });
+
+      // === GEMINI HANDLERS ===
+      btnGeminiSave.addEventListener('click', () => {
+        const key = geminiInput.value.trim();
+        if (!key || !key.startsWith('AIza')) {
+          geminiStatus.className = 'status-msg error';
+          geminiStatus.textContent = '❌ API Key tidak valid. Harus diawali AIza...';
+          return;
+        }
+        chrome.storage.local.set({ geminiApiKey: key }, () => {
+          geminiStatus.className = 'status-msg success';
+          geminiStatus.textContent = '✅ API Key tersimpan!';
+        });
+      });
+
+      btnGeminiTest.addEventListener('click', async () => {
+        const key = geminiInput.value.trim();
+        if (!key) {
+          geminiStatus.className = 'status-msg error';
+          geminiStatus.textContent = '❌ Masukkan API Key dulu';
+          return;
+        }
+        geminiStatus.className = 'status-msg loading';
+        geminiStatus.textContent = '⏳ Mengecek API Key...';
+        
+        try {
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: 'Halo, balas: "OK"' }] }]
+            })
+          });
+          const data = await res.json();
+          if (data.candidates) {
+            geminiStatus.className = 'status-msg success';
+            geminiStatus.textContent = '✅ API Key valid! Gemini siap digunakan!';
+          } else {
+            throw new Error(data.error?.message || 'Unknown error');
+          }
+        } catch(err) {
+          geminiStatus.className = 'status-msg error';
+          geminiStatus.textContent = `❌ ${err.message}`;
+        }
       });
     });
   </script>

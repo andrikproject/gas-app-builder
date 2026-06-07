@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>GAS App Builder</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ====== SETUP SCREEN (first time) ====== -->
+<div id="setupScreen" class="screen">
+  <div class="setup-container">
+    <div class="setup-logo">⚡</div>
+    <h1 class="setup-title">GAS App Builder</h1>
+    <p class="setup-sub">Google Apps Script + Google Sheets + Gemini AI</p>
+    
+    <div class="setup-card">
+      <label>🔗 Web App URL</label>
+      <input type="url" id="setupUrl" placeholder="https://script.google.com/macros/s/.../exec">
+      <button class="btn btn-primary" id="setupUrlBtn">💾 Simpan & Tes</button>
+      <div id="setupUrlStatus"></div>
+    </div>
+
+    <div class="setup-card">
+      <label>🤖 Gemini API Key</label>
+      <input type="text" id="setupGeminiKey" placeholder="AIzaSy...">
+      <button class="btn btn-primary" id="setupGeminiBtn">💾 Simpan Key</button>
+      <div id="setupGeminiStatus"></div>
+    </div>
+
+    <div class="setup-card">
+      <p class="setup-hint">📖 Belum punya?<br>
+        1. Buka sheets.google.com → Extensions → Apps Script<br>
+        2. Paste kode dari <code>apps-script/Code.gs</code><br>
+        3. Deploy → Web App → Copy URL<br>
+        4. Dapatkan Gemini Key di <code>aistudio.google.com/apikey</code></p>
+    </div>
+    
+    <button class="btn btn-success" id="setupStartBtn">🚀 Mulai Aplikasi</button>
+  </div>
+</div>
+
+<!-- ====== MAIN APP SCREEN ====== -->
+<div id="mainScreen" class="screen" style="display:none">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">⚡ GAS</span>
+      <span class="header-title" id="headerTitle">App Builder</span>
+    </div>
+    <div class="header-right">
+      <span id="connStatus" class="status-dot disconnected" title="Status"></span>
+      <button class="btn-icon" id="headerSettings" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <!-- CONTENT PAGES -->
+  <main class="main-content">
+
+    <!-- PAGE: Dashboard -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-header">
+        <h2>📊 Dashboard</h2>
+        <span class="badge" id="dashTotal">0</span>
+      </div>
+      <div id="dashContent">
+        <div class="empty-state">
+          <div class="empty-icon">📋</div>
+          <p>Hubungkan ke Google Sheets dulu</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAGE: Data -->
+    <div class="page" id="page-data">
+      <div class="page-header">
+        <h2>📋 Data</h2>
+        <div class="header-actions">
+          <select id="dataSheetSelect" class="select-sm"><option>Pilih sheet...</option></select>
+          <button class="btn-icon" id="dataRefresh">🔄</button>
+        </div>
+      </div>
+      <div class="search-bar">
+        <input type="text" id="dataSearch" placeholder="🔍 Cari data..." class="input-search">
+      </div>
+      <div id="dataList" class="data-list"></div>
+      <div id="dataPagination" class="pagination"></div>
+    </div>
+
+    <!-- PAGE: Add -->
+    <div class="page" id="page-add">
+      <div class="page-header">
+        <h2>➕ Tambah Data</h2>
+        <select id="addSheetSelect" class="select-sm"><option>Pilih sheet...</option></select>
+      </div>
+      <div id="addForm"></div>
+      <button class="btn btn-primary btn-full" id="addSubmit" style="display:none">💾 Simpan</button>
+    </div>
+
+    <!-- PAGE: Sheets -->
+    <div class="page" id="page-sheets">
+      <div class="page-header">
+        <h2>🗂️ Sheets</h2>
+        <button class="btn-icon" id="sheetsRefresh">🔄</button>
+      </div>
+      <div class="flex-row" style="gap:8px;margin-bottom:12px">
+        <input type="text" id="newSheetInput" placeholder="Nama sheet baru..." class="input" style="flex:1">
+        <button class="btn btn-primary" id="createSheetBtn">➕</button>
+      </div>
+      <div id="sheetsList"></div>
+    </div>
+
+    <!-- PAGE: AI Generator -->
+    <div class="page" id="page-ai">
+      <div class="page-header">
+        <h2>🤖 AI Generator</h2>
+        <span id="aiStatusBadge" class="badge badge-warning">Key?</span>
+      </div>
+      <div class="ai-chips">
+        <button class="chip" data-prompt="Buat fungsi CRUD untuk data">➕ CRUD</button>
+        <button class="chip" data-prompt="Buat Web App dengan doGet doPost">🌐 Web App</button>
+        <button class="chip" data-prompt="Buat fungsi auto email reminder">📧 Email</button>
+        <button class="chip" data-prompt="Buat fungsi generate PDF">📄 PDF</button>
+      </div>
+      <textarea id="aiPrompt" class="ai-input" rows="3" placeholder="Deskripsikan script yang kamu butuhin...&#10;Contoh: 'Buat fungsi buat nyimpen data form ke sheet'"></textarea>
+      <button class="btn btn-primary btn-full" id="aiGenerateBtn">🚀 Generate Script</button>
+      <div id="aiLoading" class="ai-loading" style="display:none">
+        <div class="loader"></div>
+        <p style="text-align:center;color:#64748b;margin-top:8px">🤖 Gemini nulis kode...</p>
+      </div>
+      <div id="aiResult" style="display:none">
+        <div class="code-header">
+          <span>📜 Hasil</span>
+          <div>
+            <button class="btn btn-sm" id="aiCopyBtn">📋 Copy</button>
+            <button class="btn btn-sm" id="aiDeployBtn">🚀 Buka GAS</button>
+          </div>
+        </div>
+        <pre id="aiCode" class="code-block"></pre>
+        <div id="aiValidation" class="code-footer"></div>
+      </div>
+    </div>
+
+    <!-- PAGE: Stats -->
+    <div class="page" id="page-stats">
+      <div class="page-header">
+        <h2>📊 Statistik</h2>
+        <select id="statsSheetSelect" class="select-sm"><option>Pilih sheet...</option></select>
+      </div>
+      <div id="statsContent"></div>
+    </div>
+
+    <!-- PAGE: Settings -->
+    <div class="page" id="page-settings">
+      <div class="page-header"><h2>⚙️ Settings</h2></div>
+      
+      <div class="settings-card">
+        <label>🔗 Web App URL</label>
+        <input type="url" id="settingsUrl" placeholder="https://script.google.com/macros/s/.../exec">
+        <div class="flex-row" style="gap:8px;margin-top:8px">
+          <button class="btn btn-primary" style="flex:1" id="settingsSaveUrl">💾 Simpan</button>
+          <button class="btn" style="flex:1" id="settingsTestUrl">🔄 Test</button>
+        </div>
+        <div id="settingsUrlStatus"></div>
+      </div>
+
+      <div class="settings-card">
+        <label>🤖 Gemini API Key</label>
+        <input type="text" id="settingsGeminiKey" placeholder="AIzaSy...">
+        <div class="flex-row" style="gap:8px;margin-top:8px">
+          <button class="btn btn-primary" style="flex:1" id="settingsSaveGemini">💾 Simpan</button>
+          <button class="btn" style="flex:1" id="settingsTestGemini">🔄 Test</button>
+        </div>
+        <div id="settingsGeminiStatus"></div>
+      </div>
+
+      <div class="settings-card">
+        <label>📱 App Info</label>
+        <p style="color:#94a3b8;font-size:13px;line-height:1.6">
+          Version 2.0 (Mobile PWA)<br>
+          Dibuat oleh @andrikproject 🚀<br>
+          <button class="btn btn-sm" id="clearDataBtn" style="margin-top:8px">🗑️ Reset Data</button>
+        </p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- BOTTOM NAVIGATION -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="dashboard">📊<span>Home</span></button>
+    <button class="nav-item" data-page="data">📋<span>Data</span></button>
+    <button class="nav-item" data-page="add">➕<span>Tambah</span></button>
+    <button class="nav-item" data-page="ai">🤖<span>AI</span></button>
+    <button class="nav-item" data-page="settings">⚙️<span>Set</span></button>
+  </nav>
+</div>
+
+<!-- MODAL -->
+<div id="modalOverlay" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Detail</h3>
+      <button class="btn-icon" id="modalClose">✕</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast"></div>
+
+<script src="js/api.js"></script>
+<script src="js/generator.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

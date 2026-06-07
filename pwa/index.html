@@ -124,24 +124,50 @@
         <h2>🤖 AI Generator</h2>
         <span id="aiStatusBadge" class="badge badge-warning">Key?</span>
       </div>
-      <div class="ai-chips">
-        <button class="chip" data-prompt="Buat fungsi CRUD untuk data">➕ CRUD</button>
-        <button class="chip" data-prompt="Buat Web App dengan doGet doPost">🌐 Web App</button>
-        <button class="chip" data-prompt="Buat fungsi auto email reminder">📧 Email</button>
-        <button class="chip" data-prompt="Buat fungsi generate PDF">📄 PDF</button>
+      
+      <!-- Mode Selector -->
+      <div class="flex-row" style="gap:6px;margin-bottom:10px">
+        <button class="btn btn-sm ai-mode active" data-mode="script" style="flex:1">📜 Script</button>
+        <button class="btn btn-sm ai-mode" data-mode="sheet" style="flex:1">📊 Sheet</button>
       </div>
-      <textarea id="aiPrompt" class="ai-input" rows="3" placeholder="Deskripsikan script yang kamu butuhin...&#10;Contoh: 'Buat fungsi buat nyimpen data form ke sheet'"></textarea>
-      <button class="btn btn-primary btn-full" id="aiGenerateBtn">🚀 Generate Script</button>
+
+      <!-- Script Mode -->
+      <div id="aiModeScript" class="ai-mode-content">
+        <div class="ai-chips">
+          <button class="chip" data-prompt="Buat fungsi CRUD untuk data">➕ CRUD</button>
+          <button class="chip" data-prompt="Buat Web App dengan doGet doPost">🌐 Web App</button>
+          <button class="chip" data-prompt="Buat fungsi auto email reminder">📧 Email</button>
+          <button class="chip" data-prompt="Buat fungsi generate PDF">📄 PDF</button>
+        </div>
+        <textarea id="aiPrompt" class="ai-input" rows="3" placeholder="Deskripsikan script yang kamu butuhin...&#10;Contoh: 'Buat fungsi CRUD untuk data barang'"></textarea>
+        <button class="btn btn-primary btn-full" id="aiGenerateBtn">🚀 Generate Script</button>
+      </div>
+
+      <!-- Sheet Mode -->
+      <div id="aiModeSheet" class="ai-mode-content" style="display:none">
+        <div class="ai-chips">
+          <button class="chip sheet-chip" data-prompt="Data inventaris barang 10 baris">📦 Barang</button>
+          <button class="chip sheet-chip" data-prompt="Data siswa dengan 15 baris">🎓 Siswa</button>
+          <button class="chip sheet-chip" data-prompt="Data penjualan 10 baris">💰 Penjualan</button>
+          <button class="chip sheet-chip" data-prompt="Data karyawan 10 baris">👥 Karyawan</button>
+        </div>
+        <textarea id="aiSheetPrompt" class="ai-input" rows="3" placeholder="Deskripsi data sheet yang kamu butuhin...&#10;Contoh: 'Buat sheet data inventaris kantor dengan kolom nama barang, kategori, jumlah, harga'"></textarea>
+        <input type="text" id="aiSheetName" class="ai-input" style="margin-top:6px" placeholder="Nama sheet (opsional, default: AI_Sheet_...">
+        <button class="btn btn-success btn-full" id="aiSheetBtn">📊 Generate & Push ke Sheets</button>
+      </div>
+
       <div id="aiLoading" class="ai-loading" style="display:none">
         <div class="loader"></div>
         <p style="text-align:center;color:#64748b;margin-top:8px">🤖 Gemini nulis kode...</p>
       </div>
+
       <div id="aiResult" style="display:none">
         <div class="code-header">
-          <span>📜 Hasil</span>
+          <span id="resultTitle">📜 Hasil</span>
           <div>
-            <button class="btn btn-sm" id="aiCopyBtn">📋 Copy</button>
-            <button class="btn btn-sm" id="aiDeployBtn">🚀 Buka GAS</button>
+            <button class="btn btn-sm" id="aiCopyBtn" style="display:none">📋 Copy</button>
+            <button class="btn btn-sm" id="aiPushSheetBtn" style="display:none">📤 Push ke Sheet</button>
+            <button class="btn btn-sm btn-primary" id="aiDeployBtn" style="display:none">🚀 Deploy GAS</button>
           </div>
         </div>
         <pre id="aiCode" class="code-block"></pre>

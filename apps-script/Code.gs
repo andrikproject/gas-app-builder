@@ -63,6 +63,8 @@ function handleRequest(e, method) {
       // === AI ===
       case 'generateScript': return sendJSON(generateScript(params));
       case 'testGeminiKey':  return sendJSON(testGeminiKey(params));
+      case 'generateSheet':  return sendJSON(generateSheetFromAI(params));
+      case 'createScriptProject': return sendJSON(createAndDeployScript(params));
       
       default:            return sendJSON({error: `Unknown action: ${action}`}, 400);
     }
@@ -408,7 +410,211 @@ function testGeminiKey(params) {
   };
 }
 
-// ========== TEST FUNCTION (run in editor) ==========
+// ========== GENERATE SHEET FROM AI ==========
+
+const SHEET_AI_PROMPT = `Kamu adalah AI yang membuat data sample untuk Google Sheets.
+
+TUGAS:
+Buat data JSON untuk spreadsheet berdasarkan deskripsi user.
+
+ATURAN:
+1. HASILKAN HANYA JSON ARRAY - tanpa penjelasan
+2. Format: [{"kolom1":"value1","kolom2":"value2"}, ...]
+3. Minimal 5 baris data sample
+4. Gunakan bahasa Indonesia untuk value
+5. Value yang relevan dan realistis
+6. Setiap object harus punya KEY yang SAMA semua
+7. JANGAN tambahkan markdown atau teks lain`;
+
+function generateSheetFromAI(params) {
+  const prompt = params.prompt;
+  const apiKey = params.geminiKey || params.apiKey;
+  const sheetName = params.name || ('AI_Sheet_' + new Date().toISOString().slice(0,10));
+  
+  if (!prompt) throw new Error('Prompt diperlukan');
+  if (!apiKey) throw new Error('Gemini API Key diperlukan');
+  
+  // Panggil Gemini untuk generate data
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [
+      { role: "user", parts: [{ text: SHEET_AI_PROMPT }] },
+      { role: "model", parts: [{ text: "Siap. Berikan deskripsi data yang kamu butuhkan." }] },
+      { role: "user", parts: [{ text: `Buat data spreadsheet untuk: ${prompt}` }] }
+    ],
+    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
+  };
+  
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+  
+  const response = UrlFetchApp.fetch(url, options);
+  const result = JSON.parse(response.getContentText());
+  
+  if (result.error) throw new Error(result.error.message);
+  if (!result.candidates?.length) throw new Error('No response from Gemini');
+  
+  let text = result.candidates[0].content.parts[0].text;
+  // Bersihkan markdown JSON
+  text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  
+  let data;
+  try { data = JSON.parse(text); } catch(e) {
+    throw new Error('Gagal parse JSON dari Gemini: ' + text.substring(0,100));
+  }
+  
+  if (!Array.isArray(data) || data.length === 0) throw new Error('Data harus berupa array');
+  
+  // Buat sheet baru
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet;
+  
+  // Cek apakah sheet udah ada
+  const existing = ss.getSheetByName(sheetName);
+  if (existing) {
+    // Kosongin dulu
+    existing.clear();
+    sheet = existing;
+  } else {
+    sheet = ss.insertSheet(sheetName);
+  }
+  
+  // Extract headers dari keys
+  const headers = Object.keys(data[0]);
+  
+  // Tulis headers
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+  
+  // Tulis data
+  const rows = data.map(row => headers.map(h => row[h] !== undefined ? row[h] : ''));
+  if (rows.length > 0) {
+    sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
+    // Auto resize kolom
+    for (let i = 0; i < headers.length; i++) {
+      sheet.autoResizeColumn(i + 1);
+    }
+  }
+  
+  return {
+    success: true,
+    sheet: sheetName,
+    rows: data.length,
+    columns: headers.length,
+    headers: headers,
+    url: ss.getUrl()
+  };
+}
+
+// ========== CREATE & DEPLOY APPS SCRIPT PROJECT ==========
+
+function createAndDeployScript(params) {
+  const code = params.code;
+  const projectName = params.name || 'GAS_Project_' + new Date().toISOString().slice(0,10);
+  const apiKey = params.geminiKey || params.apiKey;
+  const prompt = params.prompt;
+  
+  if (!code) throw new Error('Kode script diperlukan');
+  
+  // Dapatkan token OAuth untuk Apps Script API
+  const token = ScriptApp.getOAuthToken();
+  
+  // Buat project baru via Apps Script API
+  const createUrl = 'https://script.googleapis.com/v1/projects';
+  
+  // Coba generate a good name from prompt
+  const displayName = projectName;
+  
+  const createPayload = {
+    title: displayName,
+    parentId: SpreadsheetApp.getActiveSpreadsheet().getId()
+  };
+  
+  const createOptions = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(createPayload),
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  };
+  
+  const createResponse = UrlFetchApp.fetch(createUrl, createOptions);
+  const createResult = JSON.parse(createResponse.getContentText());
+  
+  if (createResult.error) throw new Error('Gagal buat project: ' + createResult.error.message);
+  
+  const scriptId = createResult.scriptId;
+  
+  // Update konten project dengan kode yang digenerate
+  const updateUrl = `https://script.googleapis.com/v1/projects/${scriptId}/content`;
+  
+  const updatePayload = {
+    files: [
+      {
+        name: 'Code',
+        type: 'SERVER_JS',
+        source: code
+      }
+    ]
+  };
+  
+  const updateOptions = {
+    method: 'put',
+    contentType: 'application/json',
+    payload: JSON.stringify(updatePayload),
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  };
+  
+  const updateResponse = UrlFetchApp.fetch(updateUrl, updateOptions);
+  const updateResult = JSON.parse(updateResponse.getContentText());
+  
+  if (updateResult.error) throw new Error('Gagal update konten: ' + updateResult.error.message);
+  
+  // Buat deployment baru
+  const deployUrl = `https://script.googleapis.com/v1/projects/${scriptId}/deployments`;
+  
+  const deployPayload = {
+    versionNumber: 1,
+    manifestName: 'Deploy from GAS App Builder',
+    description: 'Auto-deployed from GAS App Builder'
+  };
+  
+  const deployOptions = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(deployPayload),
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  };
+  
+  let deploymentUrl = '';
+  try {
+    const deployResponse = UrlFetchApp.fetch(deployUrl, deployOptions);
+    const deployResult = JSON.parse(deployResponse.getContentText());
+    if (deployResult.entryPoints?.length) {
+      deploymentUrl = deployResult.entryPoints[0].webApp?.url || '';
+    }
+  } catch(e) {
+    // Deployment optional - project tetap terbuat
+    console.warn('Auto-deploy gagal, project tetap dibuat:', e.message);
+  }
+  
+  const projectUrl = `https://script.google.com/d/${scriptId}/edit`;
+  
+  return {
+    success: true,
+    projectName: displayName,
+    scriptId: scriptId,
+    projectUrl: projectUrl,
+    deploymentUrl: deploymentUrl,
+    codeLength: code.length
+  };
+}
 
 function testConnection() {
   Logger.log('=== GAS App Builder Test ===');

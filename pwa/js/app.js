@@ -356,50 +356,257 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   // ===== AI GENERATOR =====
-  document.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+  let currentAIMode = 'script'; // 'script' or 'sheet'
+  let lastGeneratedCode = '';
+  let lastGeneratedSheet = null;
+
+  // Mode switching
+  document.querySelectorAll('.ai-mode').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.ai-mode').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentAIMode = btn.dataset.mode;
+      document.getElementById('aiModeScript').style.display = currentAIMode === 'script' ? 'block' : 'none';
+      document.getElementById('aiModeSheet').style.display = currentAIMode === 'sheet' ? 'block' : 'none';
+      document.getElementById('aiResult').style.display = 'none';
+    };
+  });
+
+  // Script mode - quick chips
+  document.querySelectorAll('#aiModeScript .chip').forEach(c => c.onclick = () => {
     document.getElementById('aiPrompt').value = c.dataset.prompt;
     document.getElementById('aiPrompt').focus();
   });
 
+  // Sheet mode - quick chips
+  document.querySelectorAll('#aiModeSheet .chip').forEach(c => c.onclick = () => {
+    document.getElementById('aiSheetPrompt').value = c.dataset.prompt;
+    document.getElementById('aiSheetPrompt').focus();
+  });
+
+  // GENERATE SCRIPT
   document.getElementById('aiGenerateBtn').onclick = async () => {
     const prompt = document.getElementById('aiPrompt').value.trim();
     const key = GAS_API.getGeminiKey();
     if (!prompt) { toast('Tulis deskripsi dulu!', 'error'); return; }
     if (!key) { toast('Atur Gemini Key di Settings!', 'error'); return; }
 
-    document.getElementById('aiLoading').style.display = 'block';
-    document.getElementById('aiResult').style.display = 'none';
-    document.getElementById('aiGenerateBtn').disabled = true;
-    document.getElementById('aiGenerateBtn').textContent = '⏳ Menulis...';
+    showAIResult();
 
     try {
       const raw = await AI_GENERATOR.generate(prompt, key);
-      const code = raw.replace(/```javascript\n?/g,'').replace(/```\n?/g,'').trim();
-      document.getElementById('aiLoading').style.display = 'none';
+      lastGeneratedCode = raw.replace(/```javascript\n?/g,'').replace(/```\n?/g,'').trim();
+      
+      hideAILoading();
       document.getElementById('aiResult').style.display = 'block';
-      document.getElementById('aiCode').textContent = code;
+      document.getElementById('resultTitle').textContent = '📜 Script Generated';
+      document.getElementById('aiCode').textContent = lastGeneratedCode;
 
-      const v = AI_GENERATOR.validateScript(code);
-      document.getElementById('aiValidation').innerHTML = v.valid ? '<span class="ok">✅ Siap pakai</span>' : v.issues.map(i => `<span class="warn">${i}</span>`).join('<br>');
+      const v = AI_GENERATOR.validateScript(lastGeneratedCode);
+      document.getElementById('aiValidation').innerHTML = v.valid 
+        ? '<span class="ok">✅ Siap pakai</span>' 
+        : v.issues.map(i => `<span class="warn">${i}</span>`).join('<br>');
 
-      document.getElementById('aiCopyBtn').onclick = () => {
-        navigator.clipboard.writeText(code).then(() => toast('✅ Tercopy!', 'success'))
-          .catch(() => { const t = document.createElement('textarea'); t.value = code; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); toast('✅ Tercopy!', 'success'); });
-      };
-      document.getElementById('aiDeployBtn').onclick = () => {
-        const u = GAS_API.getUrl();
-        window.open(u ? u.replace(/\/macros\/s\/.*/,'/edit') : 'https://script.google.com', '_blank');
-      };
+      // Show Copy + Deploy buttons
+      document.getElementById('aiCopyBtn').style.display = '';
+      document.getElementById('aiDeployBtn').style.display = '';
+      document.getElementById('aiPushSheetBtn').style.display = '';
+
+      document.getElementById('aiCopyBtn').onclick = copyCode;
+      document.getElementById('aiDeployBtn').onclick = deployScript;
+      document.getElementById('aiPushSheetBtn').onclick = pushToSheet;
     } catch(e) {
-      document.getElementById('aiLoading').style.display = 'none';
-      document.getElementById('aiResult').style.display = 'block';
-      document.getElementById('aiCode').textContent = `❌ ${e.message}`;
-      document.getElementById('aiValidation').innerHTML = '<span class="warn">Cek API Key atau koneksi</span>';
+      showAIError(e);
     } finally {
       document.getElementById('aiGenerateBtn').disabled = false;
       document.getElementById('aiGenerateBtn').textContent = '🚀 Generate Script';
     }
   };
+
+  // GENERATE & PUSH SHEET
+  document.getElementById('aiSheetBtn').onclick = async () => {
+    const prompt = document.getElementById('aiSheetPrompt').value.trim();
+    const sheetName = document.getElementById('aiSheetName').value.trim() || ('AI_Sheet_' + new Date().toISOString().slice(0,10));
+    const key = GAS_API.getGeminiKey();
+    
+    if (!prompt) { toast('Tulis deskripsi data dulu!', 'error'); return; }
+    if (!key) { toast('Atur Gemini Key di Settings!', 'error'); return; }
+
+    showAIResult();
+    document.getElementById('resultTitle').textContent = '⏳ Generate & Push ke Sheets...';
+
+    try {
+      // Panggil langsung GAS backend dengan generateSheet action
+      const url = GAS_API.getUrl();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'generateSheet',
+          prompt: prompt,
+          geminiKey: key,
+          name: sheetName
+        })
+      });
+      const r = await res.json();
+      
+      if (r.error) throw new Error(r.error);
+
+      hideAILoading();
+      document.getElementById('aiResult').style.display = 'block';
+      
+      lastGeneratedSheet = r;
+      document.getElementById('resultTitle').textContent = '✅ Sheet Created!';
+      document.getElementById('aiCode').textContent = 
+        `📊 Sheet: ${r.sheet}\n` +
+        `📋 Baris: ${r.rows}\n` +
+        `📋 Kolom: ${r.columns}\n` +
+        `🔤 Headers: ${(r.headers||[]).join(', ')}\n\n` +
+        `🔗 ${r.url}`;
+      document.getElementById('aiValidation').innerHTML = 
+        `<span class="ok">✅ ${r.rows} baris data berhasil dibuat di sheet "${r.sheet}"!</span>`;
+
+      // Show only sheet-related buttons
+      document.getElementById('aiCopyBtn').style.display = '';
+      document.getElementById('aiDeployBtn').style.display = 'none';
+      document.getElementById('aiPushSheetBtn').style.display = 'none';
+      
+      document.getElementById('aiCopyBtn').onclick = () => {
+        navigator.clipboard.writeText(r.url)
+          .then(() => toast('✅ Link sheet tercopy!', 'success'))
+          .catch(() => toast('❌ Gagal copy', 'error'));
+      };
+    } catch(e) {
+      showAIError(e);
+    } finally {
+      document.getElementById('aiSheetBtn').disabled = false;
+      document.getElementById('aiSheetBtn').textContent = '📊 Generate & Push ke Sheets';
+    }
+  };
+
+  // 📤 PUSH GENERATED SCRIPT TO NEW SHEET
+  async function pushToSheet() {
+    if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
+    const sheetName = 'GAS_Script_' + new Date().toISOString().slice(0,10);
+    
+    showAILoading('📤 Push ke sheet...');
+    try {
+      // Buat sheet baru dengan kode sebagai data
+      const url = GAS_API.getUrl();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'addRow',
+          sheet: sheetName,
+          data: JSON.stringify({
+            timestamp: new Date().toISOString(),
+            code: lastGeneratedCode,
+            prompt: document.getElementById('aiPrompt').value.trim()
+          })
+        })
+      });
+      await res.json();
+      
+      hideAILoading();
+      toast(`✅ Script tersimpan di sheet "${sheetName}"!`, 'success');
+      
+      // Auto-switch ke data tab
+      setTimeout(() => loadSheetsDropdowns(), 500);
+    } catch(e) {
+      hideAILoading();
+      toast(`❌ ${e.message}`, 'error');
+    }
+  }
+
+  // 🚀 DEPLOY SCRIPT TO NEW APPS SCRIPT PROJECT
+  async function deployScript() {
+    if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
+    const prompt = document.getElementById('aiPrompt').value.trim();
+    const projName = 'GAS_' + prompt.replace(/[^a-zA-Z0-9]/g,'_').substring(0,30) + '_' + Date.now().toString(36);
+    
+    showAILoading('🚀 Membuat project GAS...');
+    try {
+      const url = GAS_API.getUrl();
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'createScriptProject',
+          code: lastGeneratedCode,
+          name: projName,
+          prompt: prompt
+        })
+      });
+      const r = await res.json();
+      
+      if (r.error) throw new Error(r.error);
+
+      hideAILoading();
+      document.getElementById('aiResult').style.display = 'block';
+      document.getElementById('resultTitle').textContent = '✅ Project Berhasil Dibuat!';
+      document.getElementById('aiCode').textContent = 
+        `📁 Project: ${r.projectName}\n` +
+        `🆔 ID: ${r.scriptId}\n` +
+        `📝 Karakter: ${r.codeLength}\n\n` +
+        `🔗 Edit: ${r.projectUrl || '-'}\n` +
+        `🌐 Deploy: ${r.deploymentUrl || '(butuh manual deploy)'}`;
+      document.getElementById('aiValidation').innerHTML = 
+        `<span class="ok">✅ Project Apps Script berhasil dibuat! Buka link untuk edit & deploy.</span>`;
+      
+      document.getElementById('aiCopyBtn').style.display = '';
+      document.getElementById('aiDeployBtn').style.display = '';
+      document.getElementById('aiPushSheetBtn').style.display = 'none';
+      
+      document.getElementById('aiCopyBtn').onclick = () => {
+        navigator.clipboard.writeText(r.projectUrl || r.scriptId)
+          .then(() => toast('✅ Link project tercopy!', 'success'))
+          .catch(() => toast('❌ Gagal copy', 'error'));
+      };
+      document.getElementById('aiDeployBtn').onclick = () => {
+        if (r.projectUrl) window.open(r.projectUrl, '_blank');
+        else toast('URL tidak tersedia', 'error');
+      };
+    } catch(e) {
+      showAIError(e);
+    }
+  }
+
+  function copyCode() {
+    navigator.clipboard.writeText(lastGeneratedCode)
+      .then(() => toast('✅ Tercopy!', 'success'))
+      .catch(() => { const t = document.createElement('textarea'); t.value = lastGeneratedCode; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); toast('✅ Tercopy!', 'success'); });
+  }
+
+  function showAILoading(msg) {
+    document.getElementById('aiLoading').style.display = 'block';
+    document.getElementById('aiLoading').querySelector('p').textContent = msg || '🤖 Memproses...';
+    document.getElementById('aiResult').style.display = 'none';
+  }
+
+  function hideAILoading() {
+    document.getElementById('aiLoading').style.display = 'none';
+  }
+
+  function showAIResult() {
+    document.getElementById('aiLoading').style.display = 'block';
+    document.getElementById('aiResult').style.display = 'none';
+    // Hide all action buttons first
+    document.getElementById('aiCopyBtn').style.display = 'none';
+    document.getElementById('aiDeployBtn').style.display = 'none';
+    document.getElementById('aiPushSheetBtn').style.display = 'none';
+  }
+
+  function showAIError(e) {
+    document.getElementById('aiLoading').style.display = 'none';
+    document.getElementById('aiResult').style.display = 'block';
+    document.getElementById('resultTitle').textContent = '❌ Error';
+    document.getElementById('aiCode').textContent = `❌ ${e.message}`;
+    document.getElementById('aiValidation').innerHTML = '<span class="warn">Cek API Key, koneksi, atau coba lagi</span>';
+    document.getElementById('aiCopyBtn').style.display = 'none';
+    document.getElementById('aiDeployBtn').style.display = 'none';
+    document.getElementById('aiPushSheetBtn').style.display = 'none';
+  }
 
   // ===== STATS =====
   document.getElementById('statsSheetSelect').onchange = async () => {

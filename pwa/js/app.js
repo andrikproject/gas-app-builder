@@ -519,56 +519,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // 🚀 DEPLOY SCRIPT TO NEW APPS SCRIPT PROJECT
+  // 🚀 DEPLOY SCRIPT (buka script.google.com + simpan ke sheet)
   async function deployScript() {
     if (!lastGeneratedCode) { toast('Generate script dulu!', 'error'); return; }
-    const prompt = document.getElementById('aiPrompt').value.trim();
-    const projName = 'GAS_' + prompt.replace(/[^a-zA-Z0-9]/g,'_').substring(0,30) + '_' + Date.now().toString(36);
+    var prompt = document.getElementById('aiPrompt').value.trim();
+    var sheetName = 'GAS_Script_' + new Date().toISOString().slice(0,10);
+    var msg = '📌 Simpan kode ke sheet dulu...';
     
-    showAILoading('🚀 Membuat project GAS...');
+    showAILoading('📤 Simpan kode ke sheet...');
     try {
-      const url = GAS_API.getUrl();
-      const res = await fetch(url, {
+      // Simpan kode ke sheet dulu
+      var url = GAS_API.getUrl();
+      var res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
-          action: 'createScriptProject',
-          code: lastGeneratedCode,
-          name: projName,
-          prompt: prompt
+          action: 'addRow',
+          sheet: sheetName,
+          data: JSON.stringify({
+            timestamp: new Date().toISOString(),
+            prompt: prompt,
+            code: lastGeneratedCode
+          })
         })
       });
-      const r = await res.json();
+      await res.json();
       
-      if (r.error) throw new Error(r.error);
-
       hideAILoading();
+      toast('✅ Kode tersimpan di sheet "' + sheetName + '"!', 'success');
+      
+      // Buka script.new di tab baru
+      setTimeout(function() {
+        window.open('https://script.new', '_blank');
+        toast('📋 Buka tab baru, paste kode dari sheet, lalu deploy!', 'info');
+      }, 1000);
+      
       document.getElementById('aiResult').style.display = 'block';
-      document.getElementById('resultTitle').textContent = '✅ Project Berhasil Dibuat!';
+      document.getElementById('resultTitle').textContent = '✅ Kode Tersimpan!';
       document.getElementById('aiCode').textContent = 
-        `📁 Project: ${r.projectName}\n` +
-        `🆔 ID: ${r.scriptId}\n` +
-        `📝 Karakter: ${r.codeLength}\n\n` +
-        `🔗 Edit: ${r.projectUrl || '-'}\n` +
-        `🌐 Deploy: ${r.deploymentUrl || '(butuh manual deploy)'}`;
+        '📋 Kode tersimpan di sheet: "' + sheetName + '"\n\n' +
+        '📝 Langkah-langkah:\n' +
+        '1. Tab baru udah terbuka: script.new\n' +
+        '2. Buka sheet "' + sheetName + '" di spreadsheet ini\n' +
+        '3. Copy kode dari kolom "code"\n' +
+        '4. Paste di editor Apps Script\n' +
+        '5. Klik 🟢 Deploy → New deployment → Web app\n' +
+        '6. Copy URL → paste di Settings PWA\n\n' +
+        'Atau klik tombol 📋 Copy di bawah buat copy langsung kodenya!';
       document.getElementById('aiValidation').innerHTML = 
-        `<span class="ok">✅ Project Apps Script berhasil dibuat! Buka link untuk edit & deploy.</span>`;
+        '<span class="ok">✅ Kode siap! Copy & paste ke script.new lalu deploy.</span>';
       
       document.getElementById('aiCopyBtn').style.display = '';
       document.getElementById('aiDeployBtn').style.display = '';
       document.getElementById('aiPushSheetBtn').style.display = 'none';
-      
-      document.getElementById('aiCopyBtn').onclick = () => {
-        navigator.clipboard.writeText(r.projectUrl || r.scriptId)
-          .then(() => toast('✅ Link project tercopy!', 'success'))
-          .catch(() => toast('❌ Gagal copy', 'error'));
-      };
-      document.getElementById('aiDeployBtn').onclick = () => {
-        if (r.projectUrl) window.open(r.projectUrl, '_blank');
-        else toast('URL tidak tersedia', 'error');
+      document.getElementById('aiCopyBtn').onclick = copyCode;
+      document.getElementById('aiDeployBtn').onclick = function() {
+        window.open('https://script.new', '_blank');
+        toast('📋 Buka script.new, paste kode!', 'info');
       };
     } catch(e) {
-      showAIError(e);
+      hideAILoading();
+      toast('❌ Gagal simpan: ' + e.message, 'error');
+      // Fallback: tetap buka script.new meski gagal simpan
+      setTimeout(function() { window.open('https://script.new', '_blank'); }, 500);
     }
   }
 

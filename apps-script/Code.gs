@@ -11,8 +11,8 @@
  * 
  * ⚠️ PENTING:
  * - Wajib pake V8 runtime (Project Settings → Runtime → V8)
- * - Enable Apps Script API di console.cloud.google.com
- * - Web App URL yang BENAR (deploy sebagai "Anyone")
+ * - Deploy sebagai "Anyone" biar PWA bisa akses
+ * - Web App URL yang BENAR
  * 
  * Endpoint API:
  * - GET    ?action=getAll&sheet=NamaSheet
@@ -28,7 +28,6 @@
  * - POST   action=generateScript&prompt=...&geminiKey=...
  * - POST   action=testGeminiKey&geminiKey=...
  * - POST   action=generateSheet&prompt=...&geminiKey=...&name=...
- * - POST   action=createScriptProject&code=...&name=...
  */
 
 const SCRIPT_VERSION = '1.0.0';
@@ -96,7 +95,6 @@ function handleRequest(e, method) {
       case 'generateScript': return sendJSON(generateScript(params));
       case 'testGeminiKey':  return sendJSON(testGeminiKey(params));
       case 'generateSheet':  return sendJSON(generateSheetFromAI(params));
-      case 'createScriptProject': return sendJSON(createAndDeployScript(params));
       
       default:            return sendJSON({error: 'Unknown action: ' + action}, 400);
     }
@@ -573,82 +571,6 @@ function generateSheetFromAI(params) {
     columns: headers.length,
     headers: headers,
     url: ss.getUrl()
-  };
-}
-
-// ========== CREATE & DEPLOY APPS SCRIPT PROJECT ==========
-
-function createAndDeployScript(params) {
-  var code = params.code;
-  var projectName = params.name || ('GAS_Project_' + new Date().toISOString().slice(0,10));
-  
-  if (!code) throw new Error('Kode script diperlukan');
-  
-  // Dapatkan token OAuth untuk Apps Script API
-  var token = ScriptApp.getOAuthToken();
-  
-  // Buat project baru via Apps Script API
-  var createUrl = 'https://script.googleapis.com/v1/projects';
-  
-  var createPayload = {
-    title: projectName,
-    parentId: SpreadsheetApp.getActiveSpreadsheet().getId()
-  };
-  
-  var createOptions = {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(createPayload),
-    headers: {Authorization: 'Bearer ' + token},
-    muteHttpExceptions: true
-  };
-  
-  var createResponse = UrlFetchApp.fetch(createUrl, createOptions);
-  var createResult = JSON.parse(createResponse.getContentText());
-  
-  if (createResult.error) {
-    throw new Error('Gagal buat project: ' + createResult.error.message + 
-      '. Pastikan Apps Script API sudah di-enable di console.cloud.google.com');
-  }
-  
-  var scriptId = createResult.scriptId;
-  
-  // Update konten project dengan kode yang digenerate
-  var updateUrl = 'https://script.googleapis.com/v1/projects/' + scriptId + '/content';
-  
-  var updatePayload = {
-    files: [
-      {
-        name: 'Code',
-        type: 'SERVER_JS',
-        source: code
-      }
-    ]
-  };
-  
-  var updateOptions = {
-    method: 'put',
-    contentType: 'application/json',
-    payload: JSON.stringify(updatePayload),
-    headers: {Authorization: 'Bearer ' + token},
-    muteHttpExceptions: true
-  };
-  
-  var updateResponse = UrlFetchApp.fetch(updateUrl, updateOptions);
-  var updateResult = JSON.parse(updateResponse.getContentText());
-  
-  if (updateResult.error) {
-    throw new Error('Gagal update konten: ' + updateResult.error.message);
-  }
-  
-  var projectUrl = 'https://script.google.com/d/' + scriptId + '/edit';
-  
-  return {
-    success: true,
-    projectName: projectName,
-    scriptId: scriptId,
-    projectUrl: projectUrl,
-    codeLength: code.length
   };
 }
 

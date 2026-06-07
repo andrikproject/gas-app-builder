@@ -3,26 +3,35 @@
  * 
  * Cara Pakai:
  * 1. Buka Google Sheets → Extensions → Apps Script
- * 2. Paste kode ini
- * 3. Deploy → New deployment → Web app
- * 4. Copy URL Web App → paste di Chrome Extension
+ * 2. Hapus kode lama, paste kode ini
+ * 3. Di editor, buka Project Settings → centang "Show appsscript.json"
+ * 4. Ganti isi appsscript.json dengan file yang sama
+ * 5. Deploy → New deployment → Web app
+ * 6. Copy URL → paste di PWA Settings
+ * 
+ * ⚠️ PENTING:
+ * - Wajib pake V8 runtime (Project Settings → Runtime → V8)
+ * - Enable Apps Script API di console.cloud.google.com
+ * - Web App URL yang BENAR (deploy sebagai "Anyone")
  * 
  * Endpoint API:
  * - GET    ?action=getAll&sheet=NamaSheet
  * - GET    ?action=getRow&sheet=NamaSheet&id=1
- * - POST   {action:"addRow", sheet:"NamaSheet", data:{...}}
- * - POST   {action:"updateRow", sheet:"NamaSheet", id:1, data:{...}}
- * - POST   {action:"deleteRow", sheet:"NamaSheet", id:1}
- * - POST   {action:"search", sheet:"NamaSheet", query:"...", column:"...", limit:10}
+ * - POST   action=addRow&sheet=NamaSheet&data=...
+ * - POST   action=updateRow&sheet=NamaSheet&id=1&data=...
+ * - POST   action=deleteRow&sheet=NamaSheet&id=1
+ * - POST   action=search&sheet=NamaSheet&query=...
  * - GET    ?action=createSheet&name=NamaSheet
  * - GET    ?action=listSheets
  * - GET    ?action=info
  * - GET    ?action=stats&sheet=NamaSheet
- * - POST   {action:"generateScript", prompt:"...", geminiKey:"..."}
- * - POST   {action:"testGeminiKey", geminiKey:"..."}
+ * - POST   action=generateScript&prompt=...&geminiKey=...
+ * - POST   action=testGeminiKey&geminiKey=...
+ * - POST   action=generateSheet&prompt=...&geminiKey=...&name=...
+ * - POST   action=createScriptProject&code=...&name=...
  */
 
-const SCRIPT_VERSION = "1.0.0";
+const SCRIPT_VERSION = '1.0.0';
 
 // ========== WEB APP ENTRY POINTS ==========
 
@@ -38,8 +47,31 @@ function doPost(e) {
 
 function handleRequest(e, method) {
   try {
-    const params = method === 'GET' ? e.parameter : JSON.parse(e.postData.contents);
-    const action = params.action || 'info';
+    let params;
+    if (method === 'GET') {
+      params = e.parameter;
+    } else {
+      var content = e.postData.contents;
+      // Handle both JSON form-urlencoded and regular JSON
+      if (content.trim().charAt(0) === '{') {
+        params = JSON.parse(content);
+      } else {
+        params = {};
+        var pairs = content.split('&');
+        for (var i = 0; i < pairs.length; i++) {
+          var pair = pairs[i].split('=');
+          var key = decodeURIComponent(pair[0]);
+          var val = pair.length > 1 ? decodeURIComponent(pair[1]) : '';
+          params[key] = val;
+        }
+        // Handle JSON data inside form field
+        if (params.data && typeof params.data === 'string' && params.data.charAt(0) === '{') {
+          try { params.data = JSON.parse(params.data); } catch(e) {}
+        }
+      }
+    }
+    
+    var action = params.action || 'info';
     
     switch(action) {
       // === DATA OPERATIONS ===
@@ -66,7 +98,7 @@ function handleRequest(e, method) {
       case 'generateSheet':  return sendJSON(generateSheetFromAI(params));
       case 'createScriptProject': return sendJSON(createAndDeployScript(params));
       
-      default:            return sendJSON({error: `Unknown action: ${action}`}, 400);
+      default:            return sendJSON({error: 'Unknown action: ' + action}, 400);
     }
   } catch(err) {
     return sendJSON({error: err.message, stack: err.stack}, 500);
@@ -76,30 +108,34 @@ function handleRequest(e, method) {
 // ========== DATA OPERATIONS ==========
 
 function getAllData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const data = sheet.getDataRange().getValues();
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var data = sheet.getDataRange().getValues();
   
   if (data.length === 0) return {data: [], total: 0, sheet: params.sheet};
   
-  const headers = data[0];
-  const rows = data.slice(1).map((row, idx) => {
-    const obj = {id: idx + 1}; // 1-based ID
-    headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-    return obj;
-  });
+  var headers = data[0];
+  var rows = [];
+  for (var idx = 0; idx < data.length - 1; idx++) {
+    var obj = {id: idx + 1};
+    var row = data[idx + 1];
+    for (var i = 0; i < headers.length; i++) {
+      obj[headers[i]] = row[i] !== undefined ? row[i] : '';
+    }
+    rows.push(obj);
+  }
   
   // Filtering
   if (params.filter && params.value) {
-    const filtered = rows.filter(r => 
-      String(r[params.filter]).toLowerCase().includes(String(params.value).toLowerCase())
-    );
+    var filtered = rows.filter(function(r) {
+      return String(r[params.filter]).toLowerCase().indexOf(String(params.value).toLowerCase()) !== -1;
+    });
     return {data: filtered, total: filtered.length, sheet: params.sheet};
   }
   
   // Pagination
   if (params.limit) {
-    const limit = parseInt(params.limit) || 10;
-    const offset = parseInt(params.offset) || 0;
+    var limit = parseInt(params.limit) || 10;
+    var offset = parseInt(params.offset) || 0;
     return {data: rows.slice(offset, offset + limit), total: rows.length, sheet: params.sheet};
   }
   
@@ -107,145 +143,195 @@ function getAllData(params) {
 }
 
 function getRowData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const id = parseInt(params.id);
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var id = parseInt(params.id);
   if (isNaN(id) || id < 1) throw new Error('Invalid ID');
   
-  const data = sheet.getDataRange().getValues();
+  var data = sheet.getDataRange().getValues();
   if (data.length === 0 || id >= data.length) throw new Error('Row not found');
   
-  const headers = data[0];
-  const row = data[id]; // id is 1-based, data[0] is headers
-  const obj = {id};
-  headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
+  var headers = data[0];
+  var row = data[id];
+  var obj = {id: id};
+  for (var i = 0; i < headers.length; i++) {
+    obj[headers[i]] = row[i] !== undefined ? row[i] : '';
+  }
   
   return {data: obj, sheet: params.sheet};
 }
 
 function addRowData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const inputData = params.data || params;
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var inputData = params.data || params;
+  delete inputData.action;
+  delete inputData.sheet;
   
-  if (!inputData || Object.keys(inputData).length === 0) throw new Error('No data provided');
+  var allKeys = Object.keys(inputData);
+  if (allKeys.length === 0) throw new Error('No data provided');
   
   // Get headers
-  const headers = sheet.getDataRange().getValues()[0] || [];
+  var existingData = sheet.getDataRange().getValues();
+  var headers = existingData.length > 0 ? existingData[0] : [];
+  
+  if (headers.length === 0) {
+    // New sheet - add headers
+    headers = allKeys;
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+  }
   
   // Create row
-  const row = headers.map(h => inputData[h] !== undefined ? inputData[h] : '');
+  var row = [];
+  for (var i = 0; i < headers.length; i++) {
+    row.push(inputData[headers[i]] !== undefined ? inputData[headers[i]] : '');
+  }
   sheet.appendRow(row);
   
-  return {success: true, message: 'Row added', row: row, sheet: params.sheet};
+  return {success: true, message: 'Row added', sheet: params.sheet};
 }
 
 function updateRowData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const id = parseInt(params.id);
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var id = parseInt(params.id);
   if (isNaN(id) || id < 1) throw new Error('Invalid ID');
   
-  const inputData = params.data || {};
-  if (!inputData || Object.keys(inputData).length === 0) throw new Error('No data provided');
+  var inputData = params.data || params;
+  delete inputData.action;
+  delete inputData.sheet;
+  delete inputData.id;
   
-  const data = sheet.getDataRange().getValues();
+  var allKeys = Object.keys(inputData);
+  if (allKeys.length === 0) throw new Error('No data provided');
+  
+  var data = sheet.getDataRange().getValues();
   if (data.length === 0 || id >= data.length) throw new Error('Row not found');
   
-  const headers = data[0];
-  const rowNum = id + 1; // 1-based + header row
+  var headers = data[0];
+  var rowNum = id + 1; // 1-based + header row
   
-  headers.forEach((h, idx) => {
-    if (inputData[h] !== undefined) {
-      sheet.getRange(rowNum, idx + 1).setValue(inputData[h]);
+  for (var i = 0; i < headers.length; i++) {
+    if (inputData[headers[i]] !== undefined) {
+      sheet.getRange(rowNum, i + 1).setValue(inputData[headers[i]]);
     }
-  });
+  }
   
-  return {success: true, message: `Row ${id} updated`, sheet: params.sheet};
+  return {success: true, message: 'Row ' + id + ' updated', sheet: params.sheet};
 }
 
 function deleteRowData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const id = parseInt(params.id);
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var id = parseInt(params.id);
   if (isNaN(id) || id < 1) throw new Error('Invalid ID');
   
-  const rowNum = id + 1; // 1-based + header row
+  var rowNum = id + 1; // 1-based + header row
   sheet.deleteRow(rowNum);
   
-  return {success: true, message: `Row ${id} deleted`, sheet: params.sheet};
+  return {success: true, message: 'Row ' + id + ' deleted', sheet: params.sheet};
 }
 
 function searchData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const query = String(params.query || '').toLowerCase();
-  const limit = parseInt(params.limit) || 50;
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var query = String(params.query || '').toLowerCase();
+  var limit = parseInt(params.limit) || 50;
   
-  if (!query) return getAllData({...params, limit});
+  if (!query) return getAllData({sheet: params.sheet, limit: limit});
   
-  const data = sheet.getDataRange().getValues();
+  var data = sheet.getDataRange().getValues();
   if (data.length === 0) return {data: [], total: 0, sheet: params.sheet};
   
-  const headers = data[0];
-  const rows = data.slice(1).map((row, idx) => {
-    const obj = {id: idx + 1};
-    headers.forEach((h, i) => { obj[h] = row[i] !== undefined ? row[i] : ''; });
-    return obj;
-  });
-  
-  const column = params.column ? String(params.column).toLowerCase() : null;
-  const results = rows.filter(r => {
-    if (column) {
-      return String(r[column] || '').toLowerCase().includes(query);
+  var headers = data[0];
+  var rows = [];
+  for (var idx = 0; idx < data.length - 1; idx++) {
+    var obj = {id: idx + 1};
+    var row = data[idx + 1];
+    for (var i = 0; i < headers.length; i++) {
+      obj[headers[i]] = row[i] !== undefined ? row[i] : '';
     }
-    return Object.values(r).some(v => String(v).toLowerCase().includes(query));
-  }).slice(0, limit);
+    rows.push(obj);
+  }
   
-  return {data: results, total: results.length, query, sheet: params.sheet};
+  var column = params.column ? String(params.column).toLowerCase() : null;
+  var results = [];
+  for (var r = 0; r < rows.length; r++) {
+    var match = false;
+    if (column) {
+      match = String(rows[r][column] || '').toLowerCase().indexOf(query) !== -1;
+    } else {
+      var vals = Object.values(rows[r]);
+      for (var v = 0; v < vals.length; v++) {
+        if (String(vals[v]).toLowerCase().indexOf(query) !== -1) {
+          match = true;
+          break;
+        }
+      }
+    }
+    if (match) results.push(rows[r]);
+    if (results.length >= limit) break;
+  }
+  
+  return {data: results, total: results.length, query: query, sheet: params.sheet};
 }
 
 // ========== SHEET OPERATIONS ==========
 
 function listSheets() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheets = ss.getSheets().map(s => ({
-    name: s.getName(),
-    rows: s.getLastRow(),
-    cols: s.getLastColumn()
-  }));
-  return {sheets, total: sheets.length};
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetsArr = ss.getSheets();
+  var sheets = [];
+  for (var i = 0; i < sheetsArr.length; i++) {
+    sheets.push({
+      name: sheetsArr[i].getName(),
+      rows: sheetsArr[i].getLastRow(),
+      cols: sheetsArr[i].getLastColumn()
+    });
+  }
+  return {sheets: sheets, total: sheets.length};
 }
 
 function createNewSheet(params) {
-  const name = params.name || params.sheet;
+  var name = params.name || params.sheet;
   if (!name) throw new Error('Sheet name required');
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const existing = ss.getSheetByName(name);
-  if (existing) throw new Error(`Sheet "${name}" already exists`);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var existing = ss.getSheetByName(name);
+  if (existing) throw new Error('Sheet "' + name + '" already exists');
   
-  const sheet = ss.insertSheet(name);
+  var sheet = ss.insertSheet(name);
   
   // Add default headers
   if (params.headers) {
-    const headers = Array.isArray(params.headers) ? params.headers : [params.headers];
+    var headers = Array.isArray(params.headers) ? params.headers : [params.headers];
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   
-  return {success: true, message: `Sheet "${name}" created`, sheet: name};
+  return {success: true, message: 'Sheet "' + name + '" created', sheet: name};
 }
 
 function getSheetStats(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const data = sheet.getDataRange().getValues();
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var data = sheet.getDataRange().getValues();
   
   if (data.length < 2) return {total: 0, columns: 0, sheet: params.sheet};
   
-  const headers = data[0];
-  const rows = data.slice(1);
+  var headers = data[0];
+  var rows = data.slice(1);
   
   // Column stats
-  const colStats = headers.map((h, i) => {
-    const values = rows.map(r => r[i]).filter(v => v !== '');
-    const unique = new Set(values.map(v => String(v).toLowerCase()));
-    return {name: h, total: values.length, unique: unique.size};
-  });
+  var colStats = [];
+  for (var i = 0; i < headers.length; i++) {
+    var vals = [];
+    for (var r = 0; r < rows.length; r++) {
+      if (rows[r][i] !== '') vals.push(rows[r][i]);
+    }
+    var unique = {};
+    for (var v = 0; v < vals.length; v++) {
+      unique[String(vals[v]).toLowerCase()] = true;
+    }
+    colStats.push({
+      name: headers[i],
+      total: vals.length,
+      unique: Object.keys(unique).length
+    });
+  }
   
   return {
     sheet: params.sheet,
@@ -258,46 +344,55 @@ function getSheetStats(params) {
 }
 
 function clearSheetData(params) {
-  const sheet = getSheet(params.sheet);
-  const data = sheet.getDataRange().getValues();
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var data = sheet.getDataRange().getValues();
   
   if (data.length <= 1) return {success: true, message: 'Sheet already empty'};
   
   sheet.getRange(2, 1, data.length - 1, data[0].length).clearContent();
-  return {success: true, message: `${data.length - 1} rows cleared`};
+  return {success: true, message: (data.length - 1) + ' rows cleared'};
 }
 
 function bulkAddData(params) {
-  const sheet = getSheet(params.sheet || 'Sheet1');
-  const rows = params.rows || [];
+  var sheet = getSheet(params.sheet || 'Sheet1');
+  var rowsArr = params.rows || [];
   
-  if (!Array.isArray(rows) || rows.length === 0) throw new Error('No rows provided');
+  if (!Array.isArray(rowsArr) || rowsArr.length === 0) throw new Error('No rows provided');
   
-  const headers = sheet.getDataRange().getValues()[0] || [];
+  var existingData = sheet.getDataRange().getValues();
+  var headers = existingData.length > 0 ? existingData[0] : [];
   
-  rows.forEach(rowData => {
-    const row = headers.map(h => rowData[h] !== undefined ? rowData[h] : '');
+  for (var r = 0; r < rowsArr.length; r++) {
+    var rowData = rowsArr[r];
+    var row = [];
+    for (var i = 0; i < headers.length; i++) {
+      row.push(rowData[headers[i]] !== undefined ? rowData[headers[i]] : '');
+    }
     sheet.appendRow(row);
-  });
+  }
   
-  return {success: true, message: `${rows.length} rows added`, sheet: params.sheet};
+  return {success: true, message: rowsArr.length + ' rows added', sheet: params.sheet};
 }
 
 // ========== INFO ==========
 
 function getInfo() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheets = ss.getSheets().map(s => ({
-    name: s.getName(),
-    rows: s.getLastRow(),
-    cols: s.getLastColumn()
-  }));
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetsArr = ss.getSheets();
+  var sheets = [];
+  for (var i = 0; i < sheetsArr.length; i++) {
+    sheets.push({
+      name: sheetsArr[i].getName(),
+      rows: sheetsArr[i].getLastRow(),
+      cols: sheetsArr[i].getLastColumn()
+    });
+  }
   
   return {
     name: ss.getName(),
     id: ss.getId(),
     url: ss.getUrl(),
-    sheets,
+    sheets: sheets,
     version: SCRIPT_VERSION,
     time: new Date().toISOString()
   };
@@ -306,71 +401,79 @@ function getInfo() {
 // ========== HELPERS ==========
 
 function getSheet(name) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(name || 'Sheet1');
-  if (!sheet) throw new Error(`Sheet "${name}" not found. Available: ${ss.getSheets().map(s => s.getName()).join(', ')}`);
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name || 'Sheet1');
+  if (!sheet) {
+    var names = ss.getSheets().map(function(s) { return s.getName(); });
+    throw new Error('Sheet "' + name + '" not found. Available: ' + names.join(', '));
+  }
   return sheet;
 }
 
-function sendJSON(data, statusCode = 200) {
-  const output = ContentService.createTextOutput(JSON.stringify(data));
+function sendJSON(data, statusCode) {
+  statusCode = statusCode || 200;
+  var output = ContentService.createTextOutput(JSON.stringify(data));
   output.setMimeType(ContentService.MimeType.JSON);
-  
-  if (statusCode >= 400) {
-    output.setContent(JSON.stringify(data, null, 2));
-  }
-  
   return output;
 }
 
 // ========== AI INTEGRATION ==========
 
-const AI_SYSTEM_PROMPT = `Kamu adalah asisten AI yang ahli dalam Google Apps Script (GAS).
-
-TUGAS KAMU:
-Buatkan Google Apps Script code berdasarkan permintaan user.
-
-ATURAN:
-1. HASILKAN HANYA KODE - tanpa penjelasan
-2. Gunakan komentar (//) untuk penjelasan singkat
-3. Pastikan kode SIAP PAKAI (copy-paste ke Apps Script editor)
-4. Tambahkan fungsi doGet() dan doPost() jika perlu Web App
-5. JANGAN tambahkan teks seperti "Ini dia kodenya"
-6. LANGSUNG berikan kode yang siap pakai`;
-
-function generateScript(params) {
-  const prompt = params.prompt || params.text;
-  const apiKey = params.geminiKey || params.apiKey;
+function callGemini(apiKey, prompt, systemPrompt, options) {
+  options = options || {};
+  var url = 'https://generativelanguage.googleapis.com/v1beta/models/' + (options.model || 'gemini-2.0-flash') + ':generateContent?key=' + apiKey;
   
-  if (!prompt) throw new Error('Prompt diperlukan');
-  if (!apiKey) throw new Error('Gemini API Key diperlukan');
+  var contents = [];
+  if (systemPrompt) {
+    contents.push({role: 'user', parts: [{text: systemPrompt}]});
+    contents.push({role: 'model', parts: [{text: 'Siap.'}]});
+  }
+  contents.push({role: 'user', parts: [{text: prompt}]});
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-  
-  const payload = {
-    contents: [
-      { role: "user", parts: [{ text: AI_SYSTEM_PROMPT }] },
-      { role: "model", parts: [{ text: "Siap. Berikan deskripsi script yang kamu butuhkan." }] },
-      { role: "user", parts: [{ text: `Buatkan Google Apps Script untuk: ${prompt}` }] }
-    ],
-    generationConfig: { temperature: 0.3, maxOutputTokens: 4096 }
+  var payload = {
+    contents: contents,
+    generationConfig: {
+      temperature: options.temperature || 0.3,
+      maxOutputTokens: options.maxTokens || 4096
+    }
   };
   
-  const options = {
+  var fetchOptions = {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   };
   
-  const response = UrlFetchApp.fetch(url, options);
-  const result = JSON.parse(response.getContentText());
+  var response = UrlFetchApp.fetch(url, fetchOptions);
+  var result = JSON.parse(response.getContentText());
   
   if (result.error) throw new Error(result.error.message);
   if (!result.candidates || result.candidates.length === 0) throw new Error('No response from Gemini');
   
-  const text = result.candidates[0].content.parts[0].text;
-  const cleanCode = text.replace(/```javascript\n?/g, '').replace(/```\n?/g, '').trim();
+  return result.candidates[0].content.parts[0].text;
+}
+
+function generateScript(params) {
+  var prompt = params.prompt || params.text;
+  var apiKey = params.geminiKey || params.apiKey;
+  
+  if (!prompt) throw new Error('Prompt diperlukan');
+  if (!apiKey) throw new Error('Gemini API Key diperlukan');
+  
+  var systemPrompt = 'Kamu adalah asisten AI yang ahli dalam Google Apps Script (GAS).\n\n' +
+    'TUGAS KAMU: Buatkan Google Apps Script code berdasarkan permintaan user.\n\n' +
+    'ATURAN:\n' +
+    '1. HASILKAN HANYA KODE - tanpa penjelasan\n' +
+    '2. Gunakan komentar // untuk penjelasan singkat\n' +
+    '3. Pastikan kode SIAP PAKAI (copy-paste ke Apps Script editor)\n' +
+    '4. Sertakan doGet() dan doPost() jika perlu Web App\n' +
+    '5. JANGAN tambahkan teks seperti "Ini dia kodenya"\n' +
+    '6. LANGSUNG berikan kode yang siap pakai';
+  
+  var text = callGemini(apiKey, 'Buatkan Google Apps Script untuk: ' + prompt, systemPrompt);
+  
+  var cleanCode = text.replace(/```javascript\n?/g, '').replace(/```\n?/g, '').trim();
   
   return {
     success: true,
@@ -381,27 +484,10 @@ function generateScript(params) {
 }
 
 function testGeminiKey(params) {
-  const apiKey = params.geminiKey || params.apiKey;
+  var apiKey = params.geminiKey || params.apiKey;
   if (!apiKey) throw new Error('Gemini API Key diperlukan');
   
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-  
-  const payload = {
-    contents: [{ parts: [{ text: 'Halo, balas: "OK" saja' }] }],
-    generationConfig: { maxOutputTokens: 10 }
-  };
-  
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
-  
-  const response = UrlFetchApp.fetch(url, options);
-  const result = JSON.parse(response.getContentText());
-  
-  if (result.error) throw new Error(result.error.message);
+  callGemini(apiKey, 'Halo, balas: "OK" saja', null, {maxTokens: 10});
   
   return {
     success: true,
@@ -412,72 +498,45 @@ function testGeminiKey(params) {
 
 // ========== GENERATE SHEET FROM AI ==========
 
-const SHEET_AI_PROMPT = `Kamu adalah AI yang membuat data sample untuk Google Sheets.
-
-TUGAS:
-Buat data JSON untuk spreadsheet berdasarkan deskripsi user.
-
-ATURAN:
-1. HASILKAN HANYA JSON ARRAY - tanpa penjelasan
-2. Format: [{"kolom1":"value1","kolom2":"value2"}, ...]
-3. Minimal 5 baris data sample
-4. Gunakan bahasa Indonesia untuk value
-5. Value yang relevan dan realistis
-6. Setiap object harus punya KEY yang SAMA semua
-7. JANGAN tambahkan markdown atau teks lain`;
+var SHEET_AI_PROMPT = 'Kamu adalah AI yang membuat data sample untuk Google Sheets.\n\n' +
+  'TUGAS: Buat data JSON untuk spreadsheet berdasarkan deskripsi user.\n\n' +
+  'ATURAN:\n' +
+  '1. HASILKAN HANYA JSON ARRAY - tanpa penjelasan\n' +
+  '2. Format: [{"kolom1":"value1","kolom2":"value2"}, ...]\n' +
+  '3. Minimal 5 baris data sample\n' +
+  '4. Gunakan bahasa Indonesia untuk value\n' +
+  '5. Value yang relevan dan realistis\n' +
+  '6. Setiap object harus punya KEY yang SAMA semua\n' +
+  '7. JANGAN tambahkan markdown atau teks lain';
 
 function generateSheetFromAI(params) {
-  const prompt = params.prompt;
-  const apiKey = params.geminiKey || params.apiKey;
-  const sheetName = params.name || ('AI_Sheet_' + new Date().toISOString().slice(0,10));
+  var prompt = params.prompt;
+  var apiKey = params.geminiKey || params.apiKey;
+  var sheetName = params.name || ('AI_Sheet_' + new Date().toISOString().slice(0,10));
   
   if (!prompt) throw new Error('Prompt diperlukan');
   if (!apiKey) throw new Error('Gemini API Key diperlukan');
   
-  // Panggil Gemini untuk generate data
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+  var text = callGemini(apiKey, 'Buat data spreadsheet untuk: ' + prompt, SHEET_AI_PROMPT, {temperature: 0.7});
   
-  const payload = {
-    contents: [
-      { role: "user", parts: [{ text: SHEET_AI_PROMPT }] },
-      { role: "model", parts: [{ text: "Siap. Berikan deskripsi data yang kamu butuhkan." }] },
-      { role: "user", parts: [{ text: `Buat data spreadsheet untuk: ${prompt}` }] }
-    ],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 4096 }
-  };
-  
-  const options = {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  };
-  
-  const response = UrlFetchApp.fetch(url, options);
-  const result = JSON.parse(response.getContentText());
-  
-  if (result.error) throw new Error(result.error.message);
-  if (!result.candidates?.length) throw new Error('No response from Gemini');
-  
-  let text = result.candidates[0].content.parts[0].text;
   // Bersihkan markdown JSON
   text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   
-  let data;
-  try { data = JSON.parse(text); } catch(e) {
+  var data;
+  try {
+    data = JSON.parse(text);
+  } catch(e) {
     throw new Error('Gagal parse JSON dari Gemini: ' + text.substring(0,100));
   }
   
   if (!Array.isArray(data) || data.length === 0) throw new Error('Data harus berupa array');
   
   // Buat sheet baru
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet;
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet;
   
-  // Cek apakah sheet udah ada
-  const existing = ss.getSheetByName(sheetName);
+  var existing = ss.getSheetByName(sheetName);
   if (existing) {
-    // Kosongin dulu
     existing.clear();
     sheet = existing;
   } else {
@@ -485,17 +544,24 @@ function generateSheetFromAI(params) {
   }
   
   // Extract headers dari keys
-  const headers = Object.keys(data[0]);
+  var headers = Object.keys(data[0]);
   
   // Tulis headers
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   
   // Tulis data
-  const rows = data.map(row => headers.map(h => row[h] !== undefined ? row[h] : ''));
+  var rows = [];
+  for (var r = 0; r < data.length; r++) {
+    var row = [];
+    for (var h = 0; h < headers.length; h++) {
+      row.push(data[r][headers[h]] !== undefined ? data[r][headers[h]] : '');
+    }
+    rows.push(row);
+  }
+  
   if (rows.length > 0) {
     sheet.getRange(2, 1, rows.length, headers.length).setValues(rows);
-    // Auto resize kolom
-    for (let i = 0; i < headers.length; i++) {
+    for (var i = 0; i < headers.length; i++) {
       sheet.autoResizeColumn(i + 1);
     }
   }
@@ -513,46 +579,44 @@ function generateSheetFromAI(params) {
 // ========== CREATE & DEPLOY APPS SCRIPT PROJECT ==========
 
 function createAndDeployScript(params) {
-  const code = params.code;
-  const projectName = params.name || 'GAS_Project_' + new Date().toISOString().slice(0,10);
-  const apiKey = params.geminiKey || params.apiKey;
-  const prompt = params.prompt;
+  var code = params.code;
+  var projectName = params.name || ('GAS_Project_' + new Date().toISOString().slice(0,10));
   
   if (!code) throw new Error('Kode script diperlukan');
   
   // Dapatkan token OAuth untuk Apps Script API
-  const token = ScriptApp.getOAuthToken();
+  var token = ScriptApp.getOAuthToken();
   
   // Buat project baru via Apps Script API
-  const createUrl = 'https://script.googleapis.com/v1/projects';
+  var createUrl = 'https://script.googleapis.com/v1/projects';
   
-  // Coba generate a good name from prompt
-  const displayName = projectName;
-  
-  const createPayload = {
-    title: displayName,
+  var createPayload = {
+    title: projectName,
     parentId: SpreadsheetApp.getActiveSpreadsheet().getId()
   };
   
-  const createOptions = {
+  var createOptions = {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify(createPayload),
-    headers: { Authorization: 'Bearer ' + token },
+    headers: {Authorization: 'Bearer ' + token},
     muteHttpExceptions: true
   };
   
-  const createResponse = UrlFetchApp.fetch(createUrl, createOptions);
-  const createResult = JSON.parse(createResponse.getContentText());
+  var createResponse = UrlFetchApp.fetch(createUrl, createOptions);
+  var createResult = JSON.parse(createResponse.getContentText());
   
-  if (createResult.error) throw new Error('Gagal buat project: ' + createResult.error.message);
+  if (createResult.error) {
+    throw new Error('Gagal buat project: ' + createResult.error.message + 
+      '. Pastikan Apps Script API sudah di-enable di console.cloud.google.com');
+  }
   
-  const scriptId = createResult.scriptId;
+  var scriptId = createResult.scriptId;
   
   // Update konten project dengan kode yang digenerate
-  const updateUrl = `https://script.googleapis.com/v1/projects/${scriptId}/content`;
+  var updateUrl = 'https://script.googleapis.com/v1/projects/' + scriptId + '/content';
   
-  const updatePayload = {
+  var updatePayload = {
     files: [
       {
         name: 'Code',
@@ -562,64 +626,40 @@ function createAndDeployScript(params) {
     ]
   };
   
-  const updateOptions = {
+  var updateOptions = {
     method: 'put',
     contentType: 'application/json',
     payload: JSON.stringify(updatePayload),
-    headers: { Authorization: 'Bearer ' + token },
+    headers: {Authorization: 'Bearer ' + token},
     muteHttpExceptions: true
   };
   
-  const updateResponse = UrlFetchApp.fetch(updateUrl, updateOptions);
-  const updateResult = JSON.parse(updateResponse.getContentText());
+  var updateResponse = UrlFetchApp.fetch(updateUrl, updateOptions);
+  var updateResult = JSON.parse(updateResponse.getContentText());
   
-  if (updateResult.error) throw new Error('Gagal update konten: ' + updateResult.error.message);
-  
-  // Buat deployment baru
-  const deployUrl = `https://script.googleapis.com/v1/projects/${scriptId}/deployments`;
-  
-  const deployPayload = {
-    versionNumber: 1,
-    manifestName: 'Deploy from GAS App Builder',
-    description: 'Auto-deployed from GAS App Builder'
-  };
-  
-  const deployOptions = {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify(deployPayload),
-    headers: { Authorization: 'Bearer ' + token },
-    muteHttpExceptions: true
-  };
-  
-  let deploymentUrl = '';
-  try {
-    const deployResponse = UrlFetchApp.fetch(deployUrl, deployOptions);
-    const deployResult = JSON.parse(deployResponse.getContentText());
-    if (deployResult.entryPoints?.length) {
-      deploymentUrl = deployResult.entryPoints[0].webApp?.url || '';
-    }
-  } catch(e) {
-    // Deployment optional - project tetap terbuat
-    console.warn('Auto-deploy gagal, project tetap dibuat:', e.message);
+  if (updateResult.error) {
+    throw new Error('Gagal update konten: ' + updateResult.error.message);
   }
   
-  const projectUrl = `https://script.google.com/d/${scriptId}/edit`;
+  var projectUrl = 'https://script.google.com/d/' + scriptId + '/edit';
   
   return {
     success: true,
-    projectName: displayName,
+    projectName: projectName,
     scriptId: scriptId,
     projectUrl: projectUrl,
-    deploymentUrl: deploymentUrl,
     codeLength: code.length
   };
 }
+
+// ========== TEST FUNCTION (run in editor) ==========
 
 function testConnection() {
   Logger.log('=== GAS App Builder Test ===');
   Logger.log('Spreadsheet: ' + SpreadsheetApp.getActiveSpreadsheet().getName());
   Logger.log('Sheets: ' + SpreadsheetApp.getActiveSpreadsheet().getSheets().length);
   Logger.log('Version: ' + SCRIPT_VERSION);
-  Logger.log('=== Test Complete ===');
+  Logger.log('Runtime: V8');
+  Logger.log('============================');
+  return {success: true, message: 'Test OK', version: SCRIPT_VERSION};
 }

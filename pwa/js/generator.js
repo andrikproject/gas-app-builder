@@ -84,28 +84,54 @@ const AI_GEN = {
     },
     
     custom: {
-      label: '⚙️ Custom (OpenAI-compatible)',
+      label: '⚙️ Custom API (OpenAI-compatible)',
       fields: [
         { key: 'customUrl', label: 'API URL', placeholder: 'https://your-api.com/v1/chat/completions' },
-        { key: 'customKey', label: 'API Key', placeholder: 'sk-...', secret: true },
-        { key: 'customModel', label: 'Model', placeholder: 'custom-model' }
+        { key: 'customKey', label: 'API Key (kosongin kalo gak perlu)', placeholder: 'sk-...', secret: true },
+        { key: 'customModel', label: 'Model', placeholder: 'gpt-4o-mini, llama3, dll' },
+        { key: 'customHeader', label: 'Auth Header (opsional)', placeholder: 'Authorization', default: 'Authorization' }
       ],
       
       async chat(config, messages, sysPrompt) {
         if (!config.customUrl) throw new Error('Custom URL belum diatur');
-        var model = config.customModel || 'default';
+        var url = config.customUrl;
+        var model = config.customModel || '';
         var msgs = [];
         if (sysPrompt) msgs.push({role:'system', content:sysPrompt});
         msgs.push({role:'user', content:messages.join('\n')});
         var headers = {'Content-Type':'application/json'};
-        if (config.customKey) headers['Authorization'] = 'Bearer ' + config.customKey;
-        var res = await fetch(config.customUrl, {
-          method:'POST', headers:headers,
-          body: JSON.stringify({model:model, messages:msgs, temperature:0.3, max_tokens:4096})
-        });
+        if (config.customKey) {
+          var headerName = config.customHeader || 'Authorization';
+          headers[headerName] = config.customKey.startsWith('Bearer ') ? config.customKey : 'Bearer ' + config.customKey;
+        }
+        var body = {messages:msgs, temperature:0.3, max_tokens:4096};
+        if (model) body.model = model;
+        
+        var res = await fetch(url, {method:'POST', headers:headers, body:JSON.stringify(body)});
         var data = await res.json();
-        if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-        return data.choices[0].message.content;
+        if (data.error) throw new Error(typeof data.error === 'string' ? data.error : 
+          data.error.message || JSON.stringify(data.error));
+        
+        // Coba berbagai format response
+        var text = '';
+        if (data.choices && data.choices[0]) {
+          text = data.choices[0].message?.content || data.choices[0].text || '';
+        } else if (data.candidates && data.candidates[0]) {
+          text = data.candidates[0].content?.parts?.[0]?.text || data.candidates[0].output || '';
+        } else if (data.response) {
+          text = typeof data.response === 'string' ? data.response : data.response.text || '';
+        } else if (data.content) {
+          text = typeof data.content === 'string' ? data.content : '';
+        } else if (data.text) {
+          text = data.text;
+        } else if (data.message) {
+          text = data.message.content || data.message.text || '';
+        } else if (data.output) {
+          text = typeof data.output === 'string' ? data.output : JSON.stringify(data.output);
+        }
+        
+        if (!text) throw new Error('Gagal parse response API: ' + JSON.stringify(data).slice(0,200));
+        return text;
       },
       
       testKey(config) { return this.chat(config, ['Balas: OK'], null); }

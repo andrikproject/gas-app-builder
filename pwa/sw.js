@@ -1,5 +1,5 @@
 /* GAS App Builder - Service Worker */
-const CACHE = 'gas-app-v1';
+const CACHE = 'gas-app-v2';
 const FILES = [
   '/pwa/index.html', '/pwa/manifest.json',
   '/pwa/css/style.css',

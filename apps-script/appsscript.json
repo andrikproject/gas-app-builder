@@ -3,7 +3,5 @@
   "runtimeVersion": "V8",
   "dependencies": {},
   "exceptionLogging": "STACKDRIVER",
-  "oauthScopes": [
-    "https://www.googleapis.com/auth/spreadsheets"
-  ]
+  "oauthScopes": ["https://www.googleapis.com/auth/spreadsheets"]
 }

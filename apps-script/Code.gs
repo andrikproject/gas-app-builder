@@ -30,7 +30,7 @@
  * - POST   action=generateSheet&prompt=...&geminiKey=...&name=...
  */
 
-const SCRIPT_VERSION = '1.0.0';
+var SCRIPT_VERSION = '1.0.0';
 
 // ========== WEB APP ENTRY POINTS ==========
 

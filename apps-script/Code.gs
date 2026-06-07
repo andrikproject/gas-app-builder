@@ -47,7 +47,7 @@ function doPost(e) {
 
 function handleRequest(e, method) {
   try {
-    let params;
+    var params;
     if (method === 'GET') {
       params = e.parameter;
     } else {

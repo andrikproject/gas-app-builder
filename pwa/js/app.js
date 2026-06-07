@@ -73,16 +73,79 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ===== SETTINGS PAGE =====
   function loadSettings() {
-    const cfg = JSON.parse(localStorage.getItem('gas_config') || '{}');
+    var cfg = JSON.parse(localStorage.getItem('gas_config') || '{}');
     document.getElementById('settingsUrl').value = cfg.url || '';
-    document.getElementById('settingsGeminiKey').value = cfg.geminiKey || '';
+    var provider = cfg._provider || 'gemini';
+    document.getElementById('settingsAiProvider').value = provider;
+    renderAiFields(provider, cfg);
   }
-
-  document.getElementById('settingsSaveUrl').onclick = async () => {
-    const url = document.getElementById('settingsUrl').value.trim();
-    if (!url?.startsWith('https://script.google.com')) {
-      setStatus('settingsUrlStatus', '❌ URL tidak valid', 'error'); return;
+  
+  function renderAiFields(providerId, cfg) {
+    var container = document.getElementById('aiProviderFields');
+    var fields = AI_GEN.getFields(providerId);
+    if (!fields || !fields.length) {
+      container.innerHTML = '<p style="color:#94a3b8;font-size:13px">Provider ini tidak butuh konfigurasi.</p>';
+      return;
     }
+    var html = '';
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i];
+      var val = cfg[f.key] || '';
+      if (!val && f.default) val = f.default;
+      html += '<label style="display:block;margin-top:8px;font-size:13px;color:#94a3b8">' + f.label + '</label>';
+      html += '<input type="' + (f.secret ? 'password' : 'text') + '" id="aiField_' + f.key + '" value="' + escAttr(val) + '" placeholder="' + escAttr(f.placeholder) + '" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:14px">';
+    }
+    container.innerHTML = html;
+  }
+  
+  function escAttr(s) {
+    return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  
+  // Provider change
+  document.getElementById('settingsAiProvider').onchange = function() {
+    var provider = this.value;
+    var cfg = GAS_API.getAiConfig();
+    if (!cfg._provider) cfg._provider = 'gemini';
+    renderAiFields(provider, cfg);
+  };
+  
+  // Save AI
+  document.getElementById('settingsSaveAi').onclick = function() {
+    var provider = document.getElementById('settingsAiProvider').value;
+    var fields = AI_GEN.getFields(provider);
+    var cfg = {_provider: provider};
+    for (var i = 0; i < fields.length; i++) {
+      var el = document.getElementById('aiField_' + fields[i].key);
+      cfg[fields[i].key] = el ? el.value.trim() : '';
+    }
+    GAS_API.setAiConfig(cfg);
+    setStatus('settingsAiStatus', '✅ Konfigurasi tersimpan!', 'success');
+  };
+  
+  // Test AI
+  document.getElementById('settingsTestAi').onclick = async function() {
+    var provider = document.getElementById('settingsAiProvider').value;
+    var fields = AI_GEN.getFields(provider);
+    var cfg = {_provider: provider};
+    for (var i = 0; i < fields.length; i++) {
+      var el = document.getElementById('aiField_' + fields[i].key);
+      cfg[fields[i].key] = el ? el.value.trim() : '';
+    }
+    setStatus('settingsAiStatus', '⏳ Testing...', 'loading');
+    try {
+      await AI_GEN.test(cfg);
+      GAS_API.setAiConfig(cfg);
+      setStatus('settingsAiStatus', '✅ Koneksi berhasil! Tersimpan otomatis.', 'success');
+    } catch(e) {
+      setStatus('settingsAiStatus', '❌ ' + e.message, 'error');
+    }
+  };
+
+  // Save URL
+  document.getElementById('settingsSaveUrl').onclick = async function() {
+    var url = document.getElementById('settingsUrl').value.trim();
+    if (!url) { setStatus('settingsUrlStatus', 'Masukkan URL', 'error'); return; }
     GAS_API.setUrl(url);
     setStatus('settingsUrlStatus', '⏳ Tes koneksi...', 'loading');
     try {
@@ -90,12 +153,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       setStatus('settingsUrlStatus', '✅ Tersimpan & terhubung!', 'success');
       updateHeaderStatus(true);
     } catch(e) {
-      setStatus('settingsUrlStatus', `⚠️ Tersimpan, tapi ${e.message}`, 'error');
+      setStatus('settingsUrlStatus', '⚠️ Tersimpan, tapi ' + e.message, 'error');
     }
   };
-
-  document.getElementById('settingsTestUrl').onclick = async () => {
-    const url = document.getElementById('settingsUrl').value.trim();
+  
+  // Test URL
+  document.getElementById('settingsTestUrl').onclick = async function() {
+    var url = document.getElementById('settingsUrl').value.trim();
     if (!url) { setStatus('settingsUrlStatus', 'Masukkan URL dulu', 'error'); return; }
     setStatus('settingsUrlStatus', '⏳ Testing...', 'loading');
     try {
@@ -104,11 +168,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch(e) { setStatus('settingsUrlStatus', '❌ ' + e.message, 'error'); }
   };
 
-  document.getElementById('clearDataBtn').onclick = () => {
-    if (confirm('Reset semua data lokal?')) {
-      localStorage.removeItem('gas_config');
-      location.reload();
-    }
+  document.getElementById('clearDataBtn').onclick = function() {
+    localStorage.removeItem('gas_config');
+    location.reload();
   };
 
   // ===== DASHBOARD =====
